@@ -75,6 +75,12 @@ public class CopyCMD implements Subcommand {
             data.setFilePath(originalPath.substring(0, originalPath.lastIndexOf('/') + 1) + name);
         }
 
+        String conflict = HologramPath.findConflictingFile(name, data.getFilePath());
+        if (conflict != null) {
+            MessageHelper.error(sender, "There already exists a hologram with this name in holograms/" + conflict + ".yml");
+            return false;
+        }
+
         final var copy = FancyHolograms.get().getHologramsManager().create(data);
 
         if (!new HologramCreateEvent(copy, player).callEvent()) {

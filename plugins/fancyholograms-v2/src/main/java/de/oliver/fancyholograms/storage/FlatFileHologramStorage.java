@@ -225,6 +225,51 @@ public class FlatFileHologramStorage implements HologramStorage {
     }
 
     /**
+     * Searches the holograms folder (including all subfolders) for a stored hologram that would conflict with a new one.
+     * This also finds holograms of worlds that are not loaded, which are not registered in the hologram manager.
+     *
+     * @param name     the name of the new hologram
+     * @param filePath the file path of the new hologram (relative, without extension), or null for the root folder
+     * @return the relative path of the conflicting file, or null if there is none
+     */
+    public @Nullable String findConflictingFile(@NotNull String name, @Nullable String filePath) {
+        String targetPath = filePath == null || filePath.isBlank() ? sanitizeFileName(name) : filePath;
+
+        lock.readLock().lock();
+        try {
+            for (Path path : listHologramFiles()) {
+                String relativePath = toRelativePath(path);
+                if (relativePath.equalsIgnoreCase(targetPath) || storedName(path, relativePath).equalsIgnoreCase(name)) {
+                    return relativePath;
+                }
+            }
+        } finally {
+            lock.readLock().unlock();
+        }
+
+        return null;
+    }
+
+    /**
+     * @return the name of the hologram stored in the file (the "name" key, or the file name)
+     */
+    private static String storedName(Path path, String relativePath) {
+        try {
+            // only parse the yaml if the file has a top-level name key
+            boolean hasNameKey = Files.readAllLines(path).stream().anyMatch(line -> line.startsWith("name:"));
+            if (hasNameKey) {
+                String name = YamlConfiguration.loadConfiguration(path.toFile()).getString("name");
+                if (name != null) {
+                    return name;
+                }
+            }
+        } catch (IOException ignored) {
+        }
+
+        return fileName(relativePath);
+    }
+
+    /**
      * Returns the file of the hologram. If the hologram has no file yet, it will be stored in the root folder.
      */
     private File getFile(HologramData data) {

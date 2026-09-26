@@ -66,6 +66,12 @@ public class CreateCMD implements Subcommand {
             return false;
         }
 
+        String conflict = HologramPath.findConflictingFile(name, path.filePath());
+        if (conflict != null) {
+            MessageHelper.error(player, "There already exists a hologram with this name in holograms/" + conflict + ".yml");
+            return false;
+        }
+
         DisplayHologramData displayData = getDisplayHologramData(player, type, name);
         displayData.setFilePath(path.filePath());
 

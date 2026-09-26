@@ -1,5 +1,7 @@
 package de.oliver.fancyholograms.util;
 
+import de.oliver.fancyholograms.FancyHolograms;
+import de.oliver.fancyholograms.storage.FlatFileHologramStorage;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -40,6 +42,21 @@ public record HologramPath(@Nullable String folder, @NotNull String name) {
         }
 
         return new HologramPath(folder, name);
+    }
+
+    /**
+     * Checks whether a hologram with this name or file is already stored, in any folder
+     * (including holograms of worlds that are not loaded).
+     *
+     * @param name     the hologram name
+     * @param filePath the file path of the new hologram, or null for the root folder
+     * @return the relative path of the conflicting file, or null if there is none
+     */
+    public static @Nullable String findConflictingFile(@NotNull String name, @Nullable String filePath) {
+        if (FancyHolograms.get().getHologramStorage() instanceof FlatFileHologramStorage storage) {
+            return storage.findConflictingFile(name, filePath);
+        }
+        return null;
     }
 
     /**
