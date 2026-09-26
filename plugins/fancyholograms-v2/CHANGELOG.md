@@ -1,1 +1,3 @@
+* Per-line settings for text holograms using tags at the start of a line (`<scale:2>`, `<background:red>`, `<text_shadow:true>`, `<see_through:true>`, `<align:left>`, `<offset:x,y,z>`)
+* Every hologram is now stored in its own file in `plugins/FancyHolograms/holograms/` (subfolders are supported). `holograms.yml` is migrated automatically
 * Reduce memory allocation ([#332](https://github.com/FancyInnovations/FancyPlugins/pull/332))

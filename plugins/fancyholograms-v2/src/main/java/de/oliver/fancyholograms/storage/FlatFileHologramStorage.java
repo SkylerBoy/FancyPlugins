@@ -5,6 +5,7 @@ import de.oliver.fancyholograms.FancyHolograms;
 import de.oliver.fancyholograms.api.HologramStorage;
 import de.oliver.fancyholograms.api.data.BlockHologramData;
 import de.oliver.fancyholograms.api.data.DisplayHologramData;
+import de.oliver.fancyholograms.api.data.HologramData;
 import de.oliver.fancyholograms.api.data.ItemHologramData;
 import de.oliver.fancyholograms.api.data.TextHologramData;
 import de.oliver.fancyholograms.api.hologram.Hologram;
@@ -17,199 +18,185 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Objects;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Stream;
 
+/**
+ * Stores every hologram in its own yaml file inside the {@code plugins/FancyHolograms/holograms/} folder.
+ * <p>
+ * The folder can contain any number of subfolders (with unlimited depth) to organize the holograms in groups.
+ * The name of a hologram is the name of its file (without extension), unless a {@code name} key is set in the file.
+ * Holograms keep the file they were loaded from, so they can be moved freely between folders (followed by a reload).
+ * <p>
+ * The old {@code holograms.yml} file is migrated automatically into the folder.
+ */
 public class FlatFileHologramStorage implements HologramStorage {
 
+    public static final File HOLOGRAMS_FOLDER = new File("plugins/FancyHolograms/holograms");
+    private static final File LEGACY_HOLOGRAMS_FILE = new File("plugins/FancyHolograms/holograms.yml");
+    private static final int CONFIG_VERSION = 2;
     private static final ReadWriteLock lock = new ReentrantReadWriteLock();
-    private static final File HOLOGRAMS_CONFIG_FILE = new File("plugins/FancyHolograms/holograms.yml");
-    private final ExtendedFancyLogger logger = FancyHolograms.get().getFancyLogger();
+
+    private boolean migrated = false;
+
+    private static ExtendedFancyLogger logger() {
+        return FancyHolograms.get().getFancyLogger();
+    }
 
     @Override
     public void saveBatch(Collection<Hologram> holograms, boolean override) {
-        lock.readLock().lock();
-
-        boolean success = false;
-        YamlConfiguration config = null;
-        try {
-            config = YamlConfiguration.loadConfiguration(HOLOGRAMS_CONFIG_FILE);
-
-            if (override) {
-                config.set("holograms", null);
+        if (override) {
+            Set<Path> keep = new HashSet<>();
+            for (Hologram hologram : holograms) {
+                keep.add(getFile(hologram.getData()).toPath().toAbsolutePath().normalize());
             }
 
-            for (final var hologram : holograms) {
-                writeHologram(config, hologram);
-            }
-
-            success = true;
-        } finally {
-            lock.readLock().unlock();
-            if (success) {
-                saveConfig(config);
+            for (Path file : listHologramFiles()) {
+                if (!keep.contains(file.toAbsolutePath().normalize())) {
+                    deleteFile(file.toFile());
+                }
             }
         }
 
-        logger.debug("Saved " + holograms.size() + " holograms to file (override=" + override + ")");
+        for (Hologram hologram : holograms) {
+            writeHologram(hologram.getData());
+        }
+
+        logger().debug("Saved " + holograms.size() + " holograms to files (override=" + override + ")");
     }
 
     @Override
     public void save(Hologram hologram) {
-        lock.readLock().lock();
-
-        boolean success = false;
-        YamlConfiguration config = null;
-        try {
-            config = YamlConfiguration.loadConfiguration(HOLOGRAMS_CONFIG_FILE);
-            writeHologram(config, hologram);
-
-            success = true;
-        } finally {
-            lock.readLock().unlock();
-            if (success) {
-                saveConfig(config);
-            }
-        }
-
-        logger.debug("Saved hologram " + hologram.getData().getName() + " to file");
+        writeHologram(hologram.getData());
+        logger().debug("Saved hologram " + hologram.getData().getName() + " to file");
     }
 
     @Override
     public void delete(Hologram hologram) {
-        lock.readLock().lock();
-
-        boolean success = false;
-        YamlConfiguration config = null;
-        try {
-            config = YamlConfiguration.loadConfiguration(HOLOGRAMS_CONFIG_FILE);
-            config.set("holograms." + hologram.getData().getName(), null);
-
-            success = true;
-        } finally {
-            lock.readLock().unlock();
-            if (success) {
-                saveConfig(config);
-            }
-        }
-
-        logger.debug("Deleted hologram " + hologram.getData().getName() + " from file");
+        deleteFile(getFile(hologram.getData()));
+        logger().debug("Deleted hologram " + hologram.getData().getName() + " from file");
     }
 
     @Override
     public Collection<Hologram> loadAll() {
-        List<Hologram> holograms = readHolograms(FlatFileHologramStorage.HOLOGRAMS_CONFIG_FILE, null);
-        logger.debug("Loaded " + holograms.size() + " holograms from file");
+        List<Hologram> holograms = readHolograms(null);
+        logger().debug("Loaded " + holograms.size() + " holograms from files");
         return holograms;
     }
 
     @Override
     public Collection<Hologram> loadAll(String world) {
-        List<Hologram> holograms = readHolograms(FlatFileHologramStorage.HOLOGRAMS_CONFIG_FILE, world);
-        logger.debug("Loaded " + holograms.size() + " holograms from file (world=" + world + ")");
+        List<Hologram> holograms = readHolograms(world);
+        logger().debug("Loaded " + holograms.size() + " holograms from files (world=" + world + ")");
         return holograms;
     }
 
     /**
      * @param world The world to load the holograms from. (null for all worlds)
      */
-    private List<Hologram> readHolograms(@NotNull File configFile, @Nullable String world) {
+    private List<Hologram> readHolograms(@Nullable String world) {
+        migrateLegacyFile();
+
         lock.readLock().lock();
         try {
-            YamlConfiguration config = YamlConfiguration.loadConfiguration(configFile);
-
-            if (!config.isConfigurationSection("holograms")) {
-                logger.warn("No holograms section found in config");
-                return new ArrayList<>(0);
-            }
-
-            int configVersion = config.getInt("version", 1);
-            if (configVersion != 2) {
-                logger.warn("Config version is not 2, skipping loading holograms");
-                logger.warn("Old config version detected, skipping loading holograms");
-                return new ArrayList<>(0);
-            }
-
             List<Hologram> holograms = new ArrayList<>();
+            Map<String, Path> seenNames = new HashMap<>();
 
-            ConfigurationSection hologramsSection = config.getConfigurationSection("holograms");
-            for (String name : hologramsSection.getKeys(false)) {
-                ConfigurationSection holoSection = hologramsSection.getConfigurationSection(name);
-                if (holoSection == null) {
-                    logger.warn("Could not load hologram section in config");
+            for (Path path : listHologramFiles()) {
+                YamlConfiguration config = YamlConfiguration.loadConfiguration(path.toFile());
+                String relativePath = toRelativePath(path);
+                String name = config.getString("name", fileName(relativePath));
+
+                Path duplicate = seenNames.putIfAbsent(name.toLowerCase(Locale.ROOT), path);
+                if (duplicate != null) {
+                    logger().warn("Skipping hologram '" + name + "' in '" + relativePath + "', because there is already a hologram with this name in '" + toRelativePath(duplicate) + "'");
                     continue;
                 }
 
-                if (world != null && !holoSection.getString("location.world").equals(world)) {
+                int configVersion = config.getInt("version", CONFIG_VERSION);
+                if (configVersion != CONFIG_VERSION) {
+                    logger().warn("Config version of hologram '" + relativePath + "' is not " + CONFIG_VERSION + ", skipping");
                     continue;
                 }
 
-                String typeName = holoSection.getString("type");
-                if (typeName == null) {
-                    logger.warn("HologramType was not saved");
+                if (world != null && !world.equals(config.getString("location.world"))) {
                     continue;
                 }
 
-                HologramType type = HologramType.getByName(typeName);
-                if (type == null) {
-                    logger.warn("Could not parse HologramType");
+                DisplayHologramData displayData = createData(config, name);
+                if (displayData == null) {
+                    logger().warn("Could not parse hologram type of '" + relativePath + "' - skipping hologram");
                     continue;
                 }
 
-                DisplayHologramData displayData = null;
-                switch (type) {
-                    case TEXT -> displayData = new TextHologramData(name, new Location(null, 0, 0, 0));
-                    case ITEM -> displayData = new ItemHologramData(name, new Location(null, 0, 0, 0));
-                    case BLOCK -> displayData = new BlockHologramData(name, new Location(null, 0, 0, 0));
-                }
-
-                if (!displayData.read(holoSection, name)) {
-                    logger.warn("Could not read hologram data - skipping hologram");
+                if (!displayData.read(config, name)) {
+                    logger().warn("Could not read hologram data of '" + relativePath + "' - skipping hologram");
                     continue;
                 }
+
+                displayData.setFilePath(relativePath);
 
                 Hologram hologram = FancyHolograms.get().getHologramManager().create(displayData);
                 holograms.add(hologram);
             }
 
-            logger.debug("Loaded " + holograms.size() + " holograms from file");
             return holograms;
         } finally {
             lock.readLock().unlock();
         }
     }
 
-    private void writeHologram(YamlConfiguration config, Hologram hologram) {
-        @NotNull ConfigurationSection section;
-        if (!config.isConfigurationSection("holograms")) {
-            section = config.createSection("holograms");
-        } else {
-            section = Objects.requireNonNull(config.getConfigurationSection("holograms"));
+    private @Nullable DisplayHologramData createData(ConfigurationSection section, String name) {
+        String typeName = section.getString("type");
+        if (typeName == null) {
+            return null;
         }
 
-        String holoName = hologram.getData().getName();
-
-        ConfigurationSection holoSection = section.getConfigurationSection(holoName);
-        if (holoSection == null) {
-            holoSection = section.createSection(holoName);
+        HologramType type = HologramType.getByName(typeName);
+        if (type == null) {
+            return null;
         }
 
-        hologram.getData().write(holoSection, holoName);
-        logger.debug("Wrote hologram " + holoName + " to config");
+        return switch (type) {
+            case TEXT -> new TextHologramData(name, new Location(null, 0, 0, 0));
+            case ITEM -> new ItemHologramData(name, new Location(null, 0, 0, 0));
+            case BLOCK -> new BlockHologramData(name, new Location(null, 0, 0, 0));
+        };
     }
 
-    private void saveConfig(YamlConfiguration config) {
-        config.set("version", 2);
-        config.setInlineComments("version", List.of("DO NOT CHANGE"));
+    private void writeHologram(HologramData data) {
+        File file = getFile(data);
 
+        // load the existing file to keep comments and custom keys
+        YamlConfiguration config;
+        lock.readLock().lock();
+        try {
+            config = file.exists() ? YamlConfiguration.loadConfiguration(file) : new YamlConfiguration();
+        } finally {
+            lock.readLock().unlock();
+        }
+
+        config.set("version", CONFIG_VERSION);
+        config.setInlineComments("version", List.of("DO NOT CHANGE"));
+        config.set("name", fileName(data.getFilePath()).equals(data.getName()) ? null : data.getName());
+        data.write(config, data.getName());
+
+        saveConfig(config, file);
+    }
+
+    private void saveConfig(YamlConfiguration config, File file) {
         FancyHolograms.get().getFileStorageExecutor().execute(() -> {
             lock.writeLock().lock();
             try {
-                config.save(HOLOGRAMS_CONFIG_FILE);
+                File parent = file.getParentFile();
+                if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                    logger().error("Could not create folder " + parent.getPath());
+                }
+                config.save(file);
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
@@ -220,7 +207,154 @@ public class FlatFileHologramStorage implements HologramStorage {
                 return;
             }
 
-            logger.debug("Saved config to file");
+            logger().debug("Saved " + file.getPath());
         });
+    }
+
+    private void deleteFile(File file) {
+        FancyHolograms.get().getFileStorageExecutor().execute(() -> {
+            lock.writeLock().lock();
+            try {
+                Files.deleteIfExists(file.toPath());
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                lock.writeLock().unlock();
+            }
+        });
+    }
+
+    /**
+     * Returns the file of the hologram. If the hologram has no file yet, it will be stored in the root folder.
+     */
+    private File getFile(HologramData data) {
+        String relativePath = data.getFilePath();
+        if (relativePath == null || relativePath.isBlank() || !isInsideFolder(relativePath)) {
+            relativePath = sanitizeFileName(data.getName());
+            data.setFilePath(relativePath);
+        }
+
+        return new File(HOLOGRAMS_FOLDER, relativePath + ".yml");
+    }
+
+    private static boolean isInsideFolder(String relativePath) {
+        Path root = HOLOGRAMS_FOLDER.toPath().toAbsolutePath().normalize();
+        return root.resolve(relativePath).normalize().startsWith(root);
+    }
+
+    private static List<Path> listHologramFiles() {
+        if (!HOLOGRAMS_FOLDER.isDirectory()) {
+            return List.of();
+        }
+
+        try (Stream<Path> stream = Files.walk(HOLOGRAMS_FOLDER.toPath())) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> {
+                        String fileName = path.getFileName().toString().toLowerCase(Locale.ROOT);
+                        return fileName.endsWith(".yml") || fileName.endsWith(".yaml");
+                    })
+                    .sorted()
+                    .toList();
+        } catch (IOException e) {
+            logger().error("Could not list hologram files");
+            e.printStackTrace();
+            return List.of();
+        }
+    }
+
+    /**
+     * @return the path relative to the holograms folder, with '/' as separator and without extension
+     */
+    private static String toRelativePath(Path file) {
+        String relative = HOLOGRAMS_FOLDER.toPath().relativize(file).toString().replace(File.separatorChar, '/');
+        int dot = relative.lastIndexOf('.');
+        return dot > relative.lastIndexOf('/') ? relative.substring(0, dot) : relative;
+    }
+
+    private static String fileName(@Nullable String relativePath) {
+        if (relativePath == null) {
+            return "";
+        }
+        return relativePath.substring(relativePath.lastIndexOf('/') + 1);
+    }
+
+    private static String sanitizeFileName(String name) {
+        return name.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    /**
+     * Splits the old holograms.yml file into one file per hologram.
+     */
+    private synchronized void migrateLegacyFile() {
+        if (migrated) {
+            return;
+        }
+        migrated = true;
+
+        if (!HOLOGRAMS_FOLDER.exists() && !HOLOGRAMS_FOLDER.mkdirs()) {
+            logger().error("Could not create folder " + HOLOGRAMS_FOLDER.getPath());
+        }
+
+        if (!LEGACY_HOLOGRAMS_FILE.exists()) {
+            return;
+        }
+
+        lock.writeLock().lock();
+        try {
+            YamlConfiguration legacy = YamlConfiguration.loadConfiguration(LEGACY_HOLOGRAMS_FILE);
+
+            if (legacy.getInt("version", 1) != CONFIG_VERSION) {
+                logger().warn("holograms.yml has an old config version, it will not be migrated to the holograms folder");
+                return;
+            }
+
+            ConfigurationSection hologramsSection = legacy.getConfigurationSection("holograms");
+            int count = 0;
+            if (hologramsSection != null) {
+                logger().info("Migrating holograms.yml to the holograms folder (one file per hologram)...");
+
+                for (String name : hologramsSection.getKeys(false)) {
+                    ConfigurationSection holoSection = hologramsSection.getConfigurationSection(name);
+                    if (holoSection == null) {
+                        continue;
+                    }
+
+                    String fileName = sanitizeFileName(name);
+                    File file = new File(HOLOGRAMS_FOLDER, fileName + ".yml");
+                    if (file.exists()) {
+                        logger().warn("Could not migrate hologram '" + name + "', because the file " + file.getPath() + " already exists");
+                        continue;
+                    }
+
+                    YamlConfiguration config = new YamlConfiguration();
+                    config.set("version", CONFIG_VERSION);
+                    config.setInlineComments("version", List.of("DO NOT CHANGE"));
+                    if (!fileName.equals(name)) {
+                        config.set("name", name);
+                    }
+                    for (String key : holoSection.getKeys(true)) {
+                        if (!holoSection.isConfigurationSection(key)) {
+                            config.set(key, holoSection.get(key));
+                        }
+                    }
+
+                    config.save(file);
+                    count++;
+                }
+            }
+
+            File backup = new File(LEGACY_HOLOGRAMS_FILE.getParentFile(), "holograms-old.yml");
+            if (!LEGACY_HOLOGRAMS_FILE.renameTo(backup)) {
+                logger().error("Failed to rename holograms.yml to holograms-old.yml");
+            }
+
+            logger().info("Migrated " + count + " holograms to the holograms folder");
+        } catch (IOException e) {
+            logger().error("Could not migrate holograms.yml");
+            e.printStackTrace();
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 }

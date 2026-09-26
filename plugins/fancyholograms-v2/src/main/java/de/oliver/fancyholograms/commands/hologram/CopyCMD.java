@@ -59,6 +59,12 @@ public class CopyCMD implements Subcommand {
         data.setLocation(location);
         data.setLinkedNpcName(null);
 
+        // store the copy in the same folder as the original hologram
+        final String originalPath = hologram.getData().getFilePath();
+        if (originalPath != null && originalPath.contains("/")) {
+            data.setFilePath(originalPath.substring(0, originalPath.lastIndexOf('/') + 1) + name);
+        }
+
         final var copy = FancyHolograms.get().getHologramsManager().create(data);
 
         if (!new HologramCreateEvent(copy, player).callEvent()) {
@@ -74,7 +80,7 @@ public class CopyCMD implements Subcommand {
         FancyHolograms.get().getHologramsManager().addHologram(copy);
 
         if (FancyHolograms.get().getHologramConfiguration().isSaveOnChangedEnabled()) {
-            FancyHolograms.get().getHologramStorage().save(hologram);
+            FancyHolograms.get().getHologramStorage().save(copy);
         }
 
         MessageHelper.success(sender, "Copied the hologram");
