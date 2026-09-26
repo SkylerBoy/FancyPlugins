@@ -4,6 +4,7 @@ import de.oliver.fancyholograms.FancyHolograms;
 import de.oliver.fancyholograms.api.hologram.Hologram;
 import de.oliver.fancyholograms.api.events.HologramCreateEvent;
 import de.oliver.fancyholograms.commands.Subcommand;
+import de.oliver.fancyholograms.util.HologramPath;
 import de.oliver.fancylib.MessageHelper;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -39,7 +40,14 @@ public class CopyCMD implements Subcommand {
             return false;
         }
 
-        String name = args[2];
+        // the name can be prefixed with a folder: /hologram copy <hologram> lobby/spawn/welcome
+        HologramPath path = HologramPath.parse(args[2]);
+        if (path == null) {
+            MessageHelper.error(sender, "Invalid folder path: " + args[2]);
+            return false;
+        }
+
+        String name = path.name();
 
         if (FancyHolograms.get().getHologramsManager().getHologram(name).isPresent()) {
             MessageHelper.error(sender, "There already exists a hologram with this name");
@@ -59,9 +67,11 @@ public class CopyCMD implements Subcommand {
         data.setLocation(location);
         data.setLinkedNpcName(null);
 
-        // store the copy in the same folder as the original hologram
+        // store the copy in the given folder, or in the same folder as the original hologram
         final String originalPath = hologram.getData().getFilePath();
-        if (originalPath != null && originalPath.contains("/")) {
+        if (path.folder() != null) {
+            data.setFilePath(path.filePath());
+        } else if (originalPath != null && originalPath.contains("/")) {
             data.setFilePath(originalPath.substring(0, originalPath.lastIndexOf('/') + 1) + name);
         }
 

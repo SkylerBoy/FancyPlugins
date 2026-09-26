@@ -6,6 +6,7 @@ import de.oliver.fancyholograms.api.hologram.HologramType;
 import de.oliver.fancyholograms.api.data.*;
 import de.oliver.fancyholograms.api.events.HologramCreateEvent;
 import de.oliver.fancyholograms.commands.Subcommand;
+import de.oliver.fancyholograms.util.HologramPath;
 import de.oliver.fancylib.MessageHelper;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
@@ -46,7 +47,14 @@ public class CreateCMD implements Subcommand {
             return false;
         }
 
-        String name = args[2];
+        // the name can be prefixed with a folder: /hologram create text lobby/spawn/welcome
+        HologramPath path = HologramPath.parse(args[2]);
+        if (path == null) {
+            MessageHelper.error(player, "Invalid folder path: " + args[2]);
+            return false;
+        }
+
+        String name = path.name();
 
         if (FancyHolograms.get().getHologramsManager().getHologram(name).isPresent()) {
             MessageHelper.error(player, "There already exists a hologram with this name");
@@ -59,6 +67,7 @@ public class CreateCMD implements Subcommand {
         }
 
         DisplayHologramData displayData = getDisplayHologramData(player, type, name);
+        displayData.setFilePath(path.filePath());
 
         final var holo = FancyHolograms.get().getHologramsManager().create(displayData);
         if (!new HologramCreateEvent(holo, player).callEvent()) {
