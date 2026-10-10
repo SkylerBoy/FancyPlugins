@@ -4,6 +4,7 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import de.oliver.fancyholograms.api.data.HologramData;
 import de.oliver.fancyholograms.api.data.TextHologramData;
+import de.oliver.fancyholograms.api.data.property.LineSettings;
 import de.oliver.fancyholograms.api.data.property.Visibility;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -44,11 +45,10 @@ public abstract class Hologram {
      */
     protected final @NotNull Set<UUID> viewers = new HashSet<>();
     private static final UUID NULL_PLAYER_KEY = new UUID(0L, 0L);
-    private final Cache<UUID, Component> cachedTextPerPlayer = CacheBuilder.newBuilder()
+    private final Cache<TextCacheKey, Component> cachedTextPerPlayer = CacheBuilder.newBuilder()
             .expireAfterWrite(1, TimeUnit.SECONDS)
-            .maximumSize(512)
+            .maximumSize(2048)
             .build();
-    private String lastRawText = "";
 
     protected Hologram(@NotNull final HologramData data) {
         this.data = data;
@@ -365,18 +365,24 @@ public abstract class Hologram {
             return null;
         }
 
-        final String rawText = String.join("\n", textData.getText());
+        final String rawText = String.join("\n", textData.getText().stream().map(LineSettings::stripTags).toList());
+        return getShownText(player, rawText);
+    }
 
-        if (!rawText.equals(lastRawText)) {
-            cachedTextPerPlayer.invalidateAll();
-            lastRawText = rawText;
-        }
-
+    /**
+     * Translates the given raw text (colors and placeholders) for a player.
+     * Results are cached for a short time per player and text.
+     *
+     * @param player  the player to get the placeholders for, or null if no placeholders should be replaced
+     * @param rawText the raw text to translate
+     * @return the translated text
+     */
+    public final Component getShownText(@Nullable final Player player, @NotNull final String rawText) {
         if (Bukkit.isStopping()) {
             return MiniMessage.miniMessage().deserialize(rawText);
         }
 
-        final UUID cacheKey = player != null ? player.getUniqueId() : NULL_PLAYER_KEY;
+        final TextCacheKey cacheKey = new TextCacheKey(player != null ? player.getUniqueId() : NULL_PLAYER_KEY, rawText);
         final Component cached = cachedTextPerPlayer.getIfPresent(cacheKey);
         if (cached != null) {
             return cached;
@@ -390,7 +396,9 @@ public abstract class Hologram {
     @ApiStatus.Internal
     public void clearTextCache() {
         cachedTextPerPlayer.invalidateAll();
-        lastRawText = "";
+    }
+
+    private record TextCacheKey(UUID player, String rawText) {
     }
 
     @Override

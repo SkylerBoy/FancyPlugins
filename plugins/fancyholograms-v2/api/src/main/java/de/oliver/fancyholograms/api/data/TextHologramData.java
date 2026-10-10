@@ -7,6 +7,8 @@ import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.TextDisplay;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -148,18 +150,33 @@ public class TextHologramData extends DisplayHologramData {
         background = null;
         String backgroundStr = section.getString("background", null);
         if (backgroundStr != null) {
-            if (backgroundStr.equalsIgnoreCase("transparent")) {
-                background = Hologram.TRANSPARENT;
-            } else if (backgroundStr.startsWith("#")) {
-                background = Color.fromARGB((int) Long.parseLong(backgroundStr.substring(1), 16));
-                //backwards compatibility, make rgb hex colors solid color -their alpha is 0 by default-
-                if (backgroundStr.length() == 7) background = background.setAlpha(255);
-            } else {
-                background = Color.fromARGB(NamedTextColor.NAMES.value(backgroundStr.toLowerCase(Locale.ROOT).trim().replace(' ', '_')).value() | 0xC8000000);
-            }
+            background = parseBackground(backgroundStr);
         }
 
         return true;
+    }
+
+    /**
+     * Parses a background color: "transparent", a hex color (#RRGGBB or #AARRGGBB) or a named color.
+     *
+     * @return the parsed color, or null if the value is invalid
+     */
+    public static @Nullable Color parseBackground(@NotNull String value) {
+        try {
+            if (value.equalsIgnoreCase("transparent")) {
+                return Hologram.TRANSPARENT;
+            } else if (value.startsWith("#")) {
+                Color color = Color.fromARGB((int) Long.parseLong(value.substring(1), 16));
+                //backwards compatibility, make rgb hex colors solid color -their alpha is 0 by default-
+                if (value.length() == 7) color = color.setAlpha(255);
+                return color;
+            } else {
+                NamedTextColor named = NamedTextColor.NAMES.value(value.toLowerCase(Locale.ROOT).trim().replace(' ', '_'));
+                return named == null ? null : Color.fromARGB(named.value() | 0xC8000000);
+            }
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     @Override

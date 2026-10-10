@@ -36,6 +36,7 @@ Permission: ``FancyHolograms.admin``
 
 Description: Creates a new hologram at your location<br/>
 Syntax: ``/Hologram create (type) (name)``<br/>
+The name can be prefixed with a folder to store the hologram in a subfolder of the holograms folder, e.g. ``/Hologram create text lobby/spawn/welcome``<br/>
 Permission: ``FancyHolograms.admin``
 
 ### remove
@@ -48,6 +49,7 @@ Permission: ``FancyHolograms.admin``
 
 Description: Creates a copy of a hologram<br/>
 Syntax: ``/Hologram copy (hologram) (new name)``<br/>
+The copy is stored in the same folder as the original, unless a folder is given in the new name (e.g. ``lobby/welcome2``)<br/>
 Permission: ``FancyHolograms.admin``
 
 ### info

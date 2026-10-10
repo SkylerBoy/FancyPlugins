@@ -28,6 +28,7 @@ public class HologramData implements YamlData {
     private Visibility visibility = DEFAULT_VISIBILITY;
     private boolean persistent = DEFAULT_PERSISTENCE;
     private String linkedNpcName;
+    private String filePath;
 
     /**
      * @param name     Name of hologram
@@ -109,6 +110,19 @@ public class HologramData implements YamlData {
             }
         }
 
+        return this;
+    }
+
+    /**
+     * The path of the file this hologram is stored in, relative to the holograms folder and without extension
+     * (e.g. "lobby/spawn/welcome"). If null, the hologram is stored in the root of the holograms folder using its name.
+     */
+    public @Nullable String getFilePath() {
+        return filePath;
+    }
+
+    public HologramData setFilePath(@Nullable String filePath) {
+        this.filePath = filePath;
         return this;
     }
 
