@@ -24,7 +24,7 @@ Text holograms support per-line settings using tags at the start of a line:
 | `<background:color>` / `<bg:color>` | Named color, `#RRGGBB`, `#AARRGGBB`, `transparent` or `default` |
 | `<text_shadow:true/false>` | Text shadow |
 | `<see_through:true/false>` | See through blocks |
-| `<align:left/center/right>` | Text alignment |
+| `<align:left/center/right>` | Aligns the line against the widest line of the hologram |
 | `<offset:x,y,z>` | Extra translation for the line |
 
 Only tags at the very beginning of the line are parsed. Settings that are not set are inherited from the hologram.

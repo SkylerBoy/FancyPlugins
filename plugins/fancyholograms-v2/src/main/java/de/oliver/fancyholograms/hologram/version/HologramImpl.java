@@ -7,6 +7,7 @@ import de.oliver.fancyholograms.api.events.HologramShowEvent;
 import de.oliver.fancyholograms.api.hologram.Hologram;
 import de.oliver.fancysitula.api.entities.*;
 import de.oliver.fancysitula.factories.FancySitula;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.entity.Player;
@@ -26,6 +27,11 @@ public final class HologramImpl extends Hologram {
      * Height of a single text line in blocks at scale 1 (10 pixels * 0.025).
      */
     private static final float LINE_HEIGHT = 0.25f;
+
+    /**
+     * Size of one font pixel in blocks at scale 1.
+     */
+    private static final float PIXEL_SIZE = 0.025f;
 
     /**
      * The display entities and (for text holograms) the line segments they render.
@@ -58,9 +64,9 @@ public final class HologramImpl extends Hologram {
 
         if (data instanceof TextHologramData textData) {
             final var segments = computeSegments(textData);
-            this.state = new State(createDisplays(segments.size()), segments);
+            this.state = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()]);
         } else {
-            this.state = new State(createDisplays(1), List.of());
+            this.state = new State(createDisplays(1), List.of(), new Vector3f[0]);
         }
 
         update();
@@ -90,9 +96,9 @@ public final class HologramImpl extends Hologram {
             if (segments.size() != current.displays().size()) {
                 // the amount of display entities changed -> they have to be respawned for the viewers
                 previous = current;
-                current = new State(createDisplays(segments.size()), segments);
+                current = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()]);
             } else {
-                current = new State(current.displays(), segments);
+                current = new State(current.displays(), segments, new Vector3f[segments.size()]);
             }
         }
 
@@ -113,6 +119,9 @@ public final class HologramImpl extends Hologram {
             final FS_Display fsDisplay = displays.get(i);
             final Segment segment = segments.isEmpty() ? null : segments.get(i);
             applyData(fsDisplay, segment, yOffsets[i]);
+            if (i < current.baseTranslations().length) {
+                current.baseTranslations()[i] = new Vector3f(fsDisplay.getTranslation());
+            }
         }
 
         this.state = current;
@@ -324,6 +333,17 @@ public final class HologramImpl extends Hologram {
 
         FS_RealPlayer fsPlayer = new FS_RealPlayer(player);
 
+        // texts are resolved per player (placeholders), so the alignment of the segments is calculated here as well
+        final Component[] texts = new Component[current.displays().size()];
+        for (int i = 0; i < texts.length; i++) {
+            if (current.displays().get(i) instanceof FS_TextDisplay) {
+                texts[i] = i < current.segments().size()
+                        ? getShownText(player, current.segments().get(i).rawText())
+                        : getShownText(player);
+            }
+        }
+        alignSegments(current, texts);
+
         for (int i = 0; i < current.displays().size(); i++) {
             final FS_Display fsDisplay = current.displays().get(i);
 
@@ -338,12 +358,48 @@ public final class HologramImpl extends Hologram {
                     .send(fsPlayer);
 
             if (fsDisplay instanceof FS_TextDisplay textDisplay) {
-                textDisplay.setText(i < current.segments().size()
-                        ? getShownText(player, current.segments().get(i).rawText())
-                        : getShownText(player));
+                textDisplay.setText(texts[i]);
             }
 
             FancySitula.ENTITY_FACTORY.setEntityDataFor(fsPlayer, fsDisplay);
+        }
+    }
+
+    /**
+     * The text alignment of a display only aligns the lines inside that display, and every display is centered
+     * on the hologram. To align segments (separate displays) against each other, they are moved horizontally
+     * relative to the widest segment.
+     */
+    private void alignSegments(State current, Component[] texts) {
+        if (current.segments().size() < 2 || !(data instanceof TextHologramData textData)) {
+            return;
+        }
+
+        final int count = current.segments().size();
+        final float[] widths = new float[count];
+        float maxWidth = 0;
+        for (int i = 0; i < count; i++) {
+            final FS_Display fsDisplay = current.displays().get(i);
+            widths[i] = TextWidth.of(texts[i]) * PIXEL_SIZE * fsDisplay.getScale().x;
+            maxWidth = Math.max(maxWidth, widths[i]);
+        }
+
+        for (int i = 0; i < count; i++) {
+            final Vector3f base = current.baseTranslations()[i];
+            if (base == null) {
+                continue;
+            }
+
+            final LineSettings settings = current.segments().get(i).settings();
+            final TextDisplay.TextAlignment alignment = settings.alignment() != null ? settings.alignment() : textData.getTextAlignment();
+            final float space = (maxWidth - widths[i]) / 2f;
+            final float dx = switch (alignment) {
+                case LEFT -> -space;
+                case RIGHT -> space;
+                case CENTER -> 0;
+            };
+
+            current.displays().get(i).setTranslation(new Vector3f(base).add(dx, 0, 0));
         }
     }
 
@@ -353,8 +409,11 @@ public final class HologramImpl extends Hologram {
     private record Segment(LineSettings settings, String rawText, int lineCount) {
     }
 
-    private record State(List<FS_Display> displays, List<Segment> segments) {
-        static final State EMPTY = new State(List.of(), List.of());
+    /**
+     * @param baseTranslations translation of each text segment before the per-player alignment offset
+     */
+    private record State(List<FS_Display> displays, List<Segment> segments, Vector3f[] baseTranslations) {
+        static final State EMPTY = new State(List.of(), List.of(), new Vector3f[0]);
     }
 
 }
