@@ -38,7 +38,7 @@ dependencies {
     implementation(project(":libraries:jdb"))
     implementation(project(":libraries:config"))
     implementation("de.oliver.FancyAnalytics:java-sdk:0.0.6")
-    implementation("de.oliver.FancyAnalytics:mc-api:0.1.14")
+    implementation("de.oliver.FancyAnalytics:mc-api:0.1.15")
     implementation("de.oliver.FancyAnalytics:logger:0.0.10")
 
     compileOnly(project(":plugins:fancynpcs-v2:fn-v2-api"))
@@ -77,8 +77,8 @@ paper {
 
 tasks {
     runServer {
-        minecraftVersion("26.4-snapshot-1")
-        serverJar(file("/Users/oliver/Workspace/paper/paper-server/build/libs/paper-bundler-26.4-snapshot-1.build.1-alpha.jar"))
+        minecraftVersion("26.4-snapshot-3")
+        serverJar(file("/Users/oliver/Workspace/paper/paper-server/build/libs/paper-bundler-26.4-snapshot-3.build.1-alpha.jar"))
 
         downloadPlugins {
 //            url("https://fancyspaces.net/api/v1/spaces/s1gGcHj5/versions/A364LHvu/files/FancyWorlds-0.0.4.jar")

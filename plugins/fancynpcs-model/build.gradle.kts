@@ -18,13 +18,13 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:26.3.build.+")
 
     compileOnly(project(":plugins:fancynpcs-v2:fn-v2-api"))
-    compileOnly("io.github.toxicity188:bettermodel-bukkit-api:3.2.0")
+    compileOnly("io.github.toxicity188:bettermodel-bukkit-api:3.5.0")
 
     implementation(project(":libraries:common"))
     implementation(project(":libraries:jdb"))
     implementation(project(":libraries:config"))
     implementation("de.oliver.FancyAnalytics:java-sdk:0.0.6")
-    implementation("de.oliver.FancyAnalytics:mc-api:0.1.14")
+    implementation("de.oliver.FancyAnalytics:mc-api:0.1.15")
     implementation("de.oliver.FancyAnalytics:logger:0.0.10")
 
     compileOnly("org.incendo:cloud-core:2.1.0")
@@ -37,8 +37,8 @@ dependencies {
 
 tasks {
     runServer {
-        minecraftVersion("26.4-snapshot-1")
-        serverJar(file("/Users/oliver/Workspace/paper/paper-server/build/libs/paper-bundler-26.4-snapshot-1.build.1-alpha.jar"))
+        minecraftVersion("26.4-snapshot-3")
+        serverJar(file("/Users/oliver/Workspace/paper/paper-server/build/libs/paper-bundler-26.4-snapshot-3.build.1-alpha.jar"))
 
         downloadPlugins {
             modrinth("FancyNpcs", "2.12.1")
@@ -55,7 +55,7 @@ tasks {
     }
 
     shadowJar {
-        relocate("org.incendo", "de.oliver")
+        relocate("org.incendo.cloud", "com.fancyinnovations.fancynpcs.libs.cloud")
         archiveClassifier.set("")
         archiveBaseName.set("FancyNpcsModel")
     }
