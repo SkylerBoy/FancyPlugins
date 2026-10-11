@@ -1,12 +1,12 @@
 package de.oliver.fancyholograms.listeners;
 
+import com.destroystokyo.paper.event.player.PlayerUseUnknownEntityEvent;
 import de.oliver.fancyholograms.FancyHolograms;
 import de.oliver.fancyholograms.api.data.property.ClickActions;
 import de.oliver.fancyholograms.api.hologram.Hologram;
 import de.oliver.fancyholograms.api.events.HologramClickEvent;
 import de.oliver.fancyholograms.hologram.click.ClickActionExecutor;
 import de.oliver.fancyholograms.hologram.click.ClickTargets;
-import io.papermc.paper.event.player.PlayerUseUnknownEntityEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
