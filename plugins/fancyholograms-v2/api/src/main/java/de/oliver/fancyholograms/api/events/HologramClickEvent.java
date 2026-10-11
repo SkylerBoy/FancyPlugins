@@ -47,7 +47,8 @@ public final class HologramClickEvent extends HologramEvent {
     }
 
     /**
-     * @return the index (0-based) of the first line of the clicked line group, or -1 for item/block holograms
+     * @return the index (0-based) of the first line of the clicked line group, or -1 if no line was clicked
+     * (item/block holograms, or the empty space of the hologram)
      */
     public int getLineIndex() {
         return lineIndex;

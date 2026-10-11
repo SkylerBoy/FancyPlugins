@@ -7,6 +7,7 @@ import de.oliver.fancyholograms.api.hologram.Hologram;
 import de.oliver.fancyholograms.api.events.HologramClickEvent;
 import de.oliver.fancyholograms.hologram.click.ClickActionExecutor;
 import de.oliver.fancyholograms.hologram.click.ClickTargets;
+import de.oliver.fancyholograms.hologram.version.HologramImpl;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -31,8 +32,8 @@ public final class HologramClickListener implements Listener {
 
     @EventHandler
     public void onUseUnknownEntity(@NotNull final PlayerUseUnknownEntityEvent event) {
-        final ClickTargets.Target target = ClickTargets.get(event.getEntityId());
-        if (target == null) {
+        final Hologram hologram = ClickTargets.get(event.getEntityId());
+        if (hologram == null) {
             return;
         }
 
@@ -50,28 +51,33 @@ public final class HologramClickListener implements Listener {
         final Player player = event.getPlayer();
 
         // the hologram could have been removed or reloaded since the hitbox was created
-        final Hologram registered = FancyHolograms.get().getHologramsManager().getHologram(target.hologram().getName()).orElse(null);
-        if (registered != target.hologram()) {
+        final Hologram registered = FancyHolograms.get().getHologramsManager().getHologram(hologram.getName()).orElse(null);
+        if (registered != hologram) {
             ClickTargets.unregister(event.getEntityId());
             return;
         }
-        if (!target.hologram().isViewer(player)) {
+        if (!hologram.isViewer(player)) {
             return;
         }
 
-        final ClickActions clickActions = target.hologram().getData().getClickActions();
+        final ClickActions clickActions = hologram.getData().getClickActions();
 
         // cooldown per player and hologram
         final long now = System.currentTimeMillis();
         final Map<String, Long> playerClicks = lastClicks.computeIfAbsent(player.getUniqueId(), uuid -> new ConcurrentHashMap<>());
-        final Long last = playerClicks.get(target.hologram().getName());
+        final Long last = playerClicks.get(hologram.getName());
         if (last != null && now - last < clickActions.getCooldown()) {
             return;
         }
-        playerClicks.put(target.hologram().getName(), now);
+        playerClicks.put(hologram.getName(), now);
 
-        final List<String> actions = clickActions.resolve(target.lineActionId(), type);
-        final HologramClickEvent clickEvent = new HologramClickEvent(target.hologram(), player, type, target.lineIndex(), target.lineActionId(), actions);
+        // the hitbox covers the whole hologram, the clicked line is calculated from the view of the player
+        final HologramImpl.ClickedLine line = hologram instanceof HologramImpl impl ? impl.getClickedLine(player) : null;
+        final int lineIndex = line != null ? line.firstLine() : -1;
+        final String lineActionId = line != null ? line.actionId() : null;
+
+        final List<String> actions = clickActions.resolve(lineActionId, type);
+        final HologramClickEvent clickEvent = new HologramClickEvent(hologram, player, type, lineIndex, lineActionId, actions);
         if (!clickEvent.callEvent()) {
             return;
         }

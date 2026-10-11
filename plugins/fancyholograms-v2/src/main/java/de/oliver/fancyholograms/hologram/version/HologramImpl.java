@@ -41,6 +41,11 @@ public final class HologramImpl extends Hologram {
     private static final float HITBOX_PADDING = 0.1f;
 
     /**
+     * Space of the text background above and below the lines (1 font pixel), counted as part of a line when clicking.
+     */
+    private static final float BACKGROUND_PADDING = 0.025f;
+
+    /**
      * The display entities and (for text holograms) the line segments they render.
      * Text holograms whose lines use per-line settings are split into one display per group of consecutive
      * lines with the same settings. Replaced atomically, so it can be read from any thread.
@@ -71,9 +76,9 @@ public final class HologramImpl extends Hologram {
 
         if (data instanceof TextHologramData textData) {
             final var segments = computeSegments(textData);
-            this.state = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()], createHitboxes(segments.size()));
+            this.state = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()], createHitboxes());
         } else {
-            this.state = new State(createDisplays(1), List.of(), new Vector3f[0], createHitboxes(1));
+            this.state = new State(createDisplays(1), List.of(), new Vector3f[0], createHitboxes());
         }
 
         update();
@@ -104,13 +109,13 @@ public final class HologramImpl extends Hologram {
 
         // the amount of entities changed -> they have to be respawned for the viewers
         final boolean rebuildDisplays = count != current.displays().size();
-        final boolean rebuildHitboxes = rebuildDisplays || hasClickActions() == current.hitboxes().isEmpty();
+        final boolean rebuildHitboxes = hasClickActions() == current.hitboxes().isEmpty();
 
         current = new State(
                 rebuildDisplays ? createDisplays(count) : current.displays(),
                 newSegments,
                 new Vector3f[newSegments.size()],
-                rebuildHitboxes ? createHitboxes(count) : current.hitboxes()
+                rebuildHitboxes ? createHitboxes() : current.hitboxes()
         );
 
         final var displays = current.displays();
@@ -135,15 +140,8 @@ public final class HologramImpl extends Hologram {
             }
         }
 
-        // map the hitboxes to the hologram and line group they belong to
-        for (int i = 0; i < current.hitboxes().size(); i++) {
-            final Segment segment = segments.isEmpty() ? null : segments.get(i);
-            ClickTargets.register(current.hitboxes().get(i).getId(), new ClickTargets.Target(
-                    this,
-                    segment != null ? segment.firstLine() : -1,
-                    segment != null ? segment.settings().action() : null
-            ));
-        }
+        // map the hitbox to this hologram
+        current.hitboxes().forEach(hitbox -> ClickTargets.register(hitbox.getId(), this));
 
         this.state = current;
 
@@ -160,18 +158,92 @@ public final class HologramImpl extends Hologram {
     }
 
     /**
-     * @return one hitbox per display, or none if the hologram has no click actions
+     * @return one hitbox around the whole hologram, or none if the hologram has no click actions
      */
-    private List<InteractionHitbox> createHitboxes(int amount) {
-        if (!hasClickActions()) {
-            return List.of();
+    private List<InteractionHitbox> createHitboxes() {
+        return hasClickActions() ? List.of(new InteractionHitbox()) : List.of();
+    }
+
+    /**
+     * Calculates which line group the player is looking at, by intersecting the view ray of the player with the
+     * plane the text is rendered on (which depends on the billboard, like in the client).
+     * <p>
+     * The hitbox (interaction entity) can't be used for this: it's an axis-aligned square box, so a wide hologram
+     * gets a deep box and the ray enters it far in front of the text, at the height of another line.
+     *
+     * @return the clicked line group, or null if the player isn't looking at a line
+     */
+    public @Nullable ClickedLine getClickedLine(@NotNull Player player) {
+        final State current = this.state;
+        if (current.segments().isEmpty() || !(data instanceof DisplayHologramData displayData)) {
+            return null;
         }
 
-        final List<InteractionHitbox> hitboxes = new ArrayList<>(amount);
-        for (int i = 0; i < amount; i++) {
-            hitboxes.add(new InteractionHitbox());
+        final var location = data.getLocation();
+        final var eye = player.getEyeLocation();
+        final org.bukkit.util.Vector direction = eye.getDirection();
+        final org.bukkit.util.Vector origin = eye.toVector().subtract(location.toVector());
+
+        // normal of the text plane
+        final org.bukkit.util.Vector normal = switch (displayData.getBillboard()) {
+            case CENTER -> direction.clone();
+            case VERTICAL -> new org.bukkit.util.Vector(direction.getX(), 0, direction.getZ());
+            case HORIZONTAL -> directionOf(location.getYaw(), eye.getPitch());
+            case FIXED -> directionOf(location.getYaw(), location.getPitch());
+        };
+        if (normal.lengthSquared() < 1.0E-6) {
+            return null;
         }
-        return List.copyOf(hitboxes);
+        normal.normalize();
+
+        final double denominator = direction.dot(normal);
+        if (Math.abs(denominator) < 1.0E-6) {
+            return null;
+        }
+        final double distance = -origin.dot(normal) / denominator;
+        if (distance < 0) {
+            return null;
+        }
+
+        // "up" axis of the text plane
+        final org.bukkit.util.Vector up = new org.bukkit.util.Vector(0, 1, 0).subtract(normal.clone().multiply(normal.getY()));
+        if (up.lengthSquared() < 1.0E-6) {
+            return null;
+        }
+        up.normalize();
+
+        final org.bukkit.util.Vector hit = origin.add(direction.multiply(distance));
+        final double height = hit.dot(up);
+
+        for (int i = 0; i < current.segments().size(); i++) {
+            final Vector3f base = current.baseTranslations()[i];
+            if (base == null) {
+                continue;
+            }
+
+            final Segment segment = current.segments().get(i);
+            final double bottom = base.y - BACKGROUND_PADDING;
+            final double top = base.y + segment.lineCount() * LINE_HEIGHT * current.displays().get(i).getScale().y + BACKGROUND_PADDING;
+            if (height >= bottom && height <= top) {
+                return new ClickedLine(segment.firstLine(), segment.settings().action());
+            }
+        }
+
+        return null;
+    }
+
+    private static org.bukkit.util.Vector directionOf(float yaw, float pitch) {
+        final double yawRad = Math.toRadians(yaw);
+        final double pitchRad = Math.toRadians(pitch);
+        final double xz = Math.cos(pitchRad);
+        return new org.bukkit.util.Vector(-xz * Math.sin(yawRad), -Math.sin(pitchRad), xz * Math.cos(yawRad));
+    }
+
+    /**
+     * @param firstLine index of the first line of the clicked line group
+     * @param actionId  the {@code <action:id>} of the line group, or null
+     */
+    public record ClickedLine(int firstLine, @Nullable String actionId) {
     }
 
     private void applyData(FS_Display fsDisplay, @Nullable Segment segment, float yOffset) {
@@ -418,9 +490,8 @@ public final class HologramImpl extends Hologram {
             FancySitula.ENTITY_FACTORY.setEntityDataFor(fsPlayer, fsDisplay);
         }
 
-        for (int i = 0; i < current.hitboxes().size(); i++) {
-            final InteractionHitbox hitbox = current.hitboxes().get(i);
-            updateHitbox(hitbox, current, i, maxWidth);
+        for (final InteractionHitbox hitbox : current.hitboxes()) {
+            updateHitbox(hitbox, current, maxWidth);
 
             FancySitula.PACKET_FACTORY.createTeleportEntityPacket(
                             hitbox.getId(),
@@ -436,11 +507,11 @@ public final class HologramImpl extends Hologram {
     }
 
     /**
-     * Places a hitbox around the display it belongs to. Interaction entities are axis-aligned boxes positioned at
+     * Places the hitbox around the whole hologram. Interaction entities are axis-aligned boxes positioned at
      * their bottom center, so text hitboxes use the width of the widest line on both horizontal axes (the text
-     * faces the player).
+     * faces the player). The clicked line is calculated separately, see {@link #getClickedLine(Player)}.
      */
-    private void updateHitbox(InteractionHitbox hitbox, State current, int index, float maxTextWidth) {
+    private void updateHitbox(InteractionHitbox hitbox, State current, float maxTextWidth) {
         final var location = data.getLocation();
         if (!(data instanceof DisplayHologramData displayData)) {
             return;
@@ -449,13 +520,17 @@ public final class HologramImpl extends Hologram {
         final Vector3f scale = displayData.getScale();
         final Vector3f translation = displayData.getTranslation();
 
-        if (data instanceof TextHologramData && index < current.segments().size()) {
-            final Segment segment = current.segments().get(index);
-            final Vector3f base = current.baseTranslations()[index] != null ? current.baseTranslations()[index] : translation;
-            final float height = segment.lineCount() * LINE_HEIGHT * current.displays().get(index).getScale().y;
+        if (data instanceof TextHologramData && !current.segments().isEmpty()) {
+            float bottom = Float.MAX_VALUE;
+            float top = -Float.MAX_VALUE;
+            for (int i = 0; i < current.segments().size(); i++) {
+                final Vector3f base = current.baseTranslations()[i] != null ? current.baseTranslations()[i] : translation;
+                bottom = Math.min(bottom, base.y);
+                top = Math.max(top, base.y + current.segments().get(i).lineCount() * LINE_HEIGHT * current.displays().get(i).getScale().y);
+            }
 
-            hitbox.setLocation(location.x(), location.y() + base.y, location.z());
-            hitbox.setSize(Math.max(maxTextWidth, 0.25f) + HITBOX_PADDING, height + HITBOX_PADDING);
+            hitbox.setLocation(location.x(), location.y() + bottom - HITBOX_PADDING / 2f, location.z());
+            hitbox.setSize(Math.max(maxTextWidth, 0.25f) + HITBOX_PADDING, top - bottom + HITBOX_PADDING);
         } else if (data instanceof ItemHologramData) {
             // item displays are rendered around their position
             hitbox.setLocation(location.x() + translation.x, location.y() + translation.y - scale.y / 2f, location.z() + translation.z);
@@ -506,7 +581,7 @@ public final class HologramImpl extends Hologram {
 
     /**
      * @param baseTranslations translation of each text segment before the per-player alignment offset
-     * @param hitboxes         one clickable hitbox per display, or none if the hologram has no click actions
+     * @param hitboxes         one clickable hitbox around the hologram, or none if the hologram has no click actions
      */
     private record State(List<FS_Display> displays, List<Segment> segments, Vector3f[] baseTranslations, List<InteractionHitbox> hitboxes) {
         static final State EMPTY = new State(List.of(), List.of(), new Vector3f[0], List.of());
