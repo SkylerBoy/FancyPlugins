@@ -76,6 +76,7 @@ public final class HologramClickListener implements Listener {
      */
     @EventHandler
     public void onArmSwing(@NotNull final PlayerAnimationEvent event) {
+        FancyHolograms.get().getFancyLogger().debug("Hologram arm swing: player=" + event.getPlayer().getName() + ", type=" + event.getAnimationType());
         if (event.getAnimationType() != PlayerAnimationType.ARM_SWING) {
             return;
         }
@@ -98,6 +99,10 @@ public final class HologramClickListener implements Listener {
             }
 
             final double distance = hitbox.rayDistance(eye.getX(), eye.getY(), eye.getZ(), direction.getX(), direction.getY(), direction.getZ(), reach);
+            FancyHolograms.get().getFancyLogger().debug(String.format(java.util.Locale.ROOT,
+                    "Hologram arm swing check: hologram=%s, hitbox=(%.2f, %.2f, %.2f) size=%.2fx%.2f, eye=(%.2f, %.2f, %.2f), reach=%.2f, distance=%.2f",
+                    hologram.getName(), hitbox.getX(), hitbox.getY(), hitbox.getZ(), hitbox.getWidth(), hitbox.getHeight(),
+                    eye.getX(), eye.getY(), eye.getZ(), reach, distance));
             if (distance >= 0 && distance < targetDistance) {
                 target = hologram;
                 targetDistance = distance;
@@ -111,6 +116,7 @@ public final class HologramClickListener implements Listener {
         // a block in front of the hologram is hit first
         final RayTraceResult block = player.rayTraceBlocks(targetDistance);
         if (block != null && block.getHitPosition().distance(eye.toVector()) < targetDistance) {
+            FancyHolograms.get().getFancyLogger().debug("Hologram arm swing: block in front of hologram " + target.getName() + ": " + block.getHitBlock());
             return;
         }
 
@@ -130,6 +136,7 @@ public final class HologramClickListener implements Listener {
         final Map<String, Long> playerClicks = lastClicks.computeIfAbsent(player.getUniqueId(), uuid -> new ConcurrentHashMap<>());
         final Long last = playerClicks.get(hologram.getName());
         if (last != null && now - last < clickActions.getCooldown()) {
+            FancyHolograms.get().getFancyLogger().debug("Hologram click on cooldown: hologram=" + hologram.getName() + ", type=" + type);
             return;
         }
         playerClicks.put(hologram.getName(), now);
@@ -140,6 +147,8 @@ public final class HologramClickListener implements Listener {
         final String lineActionId = line != null ? line.actionId() : null;
 
         final List<String> actions = clickActions.resolve(lineActionId, type);
+        FancyHolograms.get().getFancyLogger().debug("Hologram click: hologram=" + hologram.getName() + ", type=" + type
+                + ", line=" + lineIndex + ", action=" + lineActionId + ", actions=" + actions);
         final HologramClickEvent clickEvent = new HologramClickEvent(hologram, player, type, lineIndex, lineActionId, actions);
         if (!clickEvent.callEvent()) {
             return;
