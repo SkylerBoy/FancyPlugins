@@ -5,6 +5,8 @@ import de.oliver.fancyholograms.api.data.property.LineSettings;
 import de.oliver.fancyholograms.api.events.HologramHideEvent;
 import de.oliver.fancyholograms.api.events.HologramShowEvent;
 import de.oliver.fancyholograms.api.hologram.Hologram;
+import de.oliver.fancyholograms.hologram.click.ClickTargets;
+import de.oliver.fancyholograms.hologram.click.InteractionHitbox;
 import de.oliver.fancysitula.api.entities.*;
 import de.oliver.fancysitula.factories.FancySitula;
 import net.kyori.adventure.text.Component;
@@ -32,6 +34,11 @@ public final class HologramImpl extends Hologram {
      * Size of one font pixel in blocks at scale 1.
      */
     private static final float PIXEL_SIZE = 0.025f;
+
+    /**
+     * Extra size of the click hitboxes (in blocks), so the background of the text is clickable too.
+     */
+    private static final float HITBOX_PADDING = 0.1f;
 
     /**
      * The display entities and (for text holograms) the line segments they render.
@@ -64,9 +71,9 @@ public final class HologramImpl extends Hologram {
 
         if (data instanceof TextHologramData textData) {
             final var segments = computeSegments(textData);
-            this.state = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()]);
+            this.state = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()], createHitboxes(segments.size()));
         } else {
-            this.state = new State(createDisplays(1), List.of(), new Vector3f[0]);
+            this.state = new State(createDisplays(1), List.of(), new Vector3f[0], createHitboxes(1));
         }
 
         update();
@@ -74,6 +81,7 @@ public final class HologramImpl extends Hologram {
 
     @Override
     public void delete() {
+        this.state.hitboxes().forEach(hitbox -> ClickTargets.unregister(hitbox.getId()));
         this.state = State.EMPTY;
     }
 
@@ -90,17 +98,20 @@ public final class HologramImpl extends Hologram {
             return;
         }
 
-        State previous = null;
-        if (data instanceof TextHologramData textData) {
-            final var segments = computeSegments(textData);
-            if (segments.size() != current.displays().size()) {
-                // the amount of display entities changed -> they have to be respawned for the viewers
-                previous = current;
-                current = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()]);
-            } else {
-                current = new State(current.displays(), segments, new Vector3f[segments.size()]);
-            }
-        }
+        final State previous = current;
+        final List<Segment> newSegments = data instanceof TextHologramData textData ? computeSegments(textData) : List.of();
+        final int count = data instanceof TextHologramData ? newSegments.size() : 1;
+
+        // the amount of entities changed -> they have to be respawned for the viewers
+        final boolean rebuildDisplays = count != current.displays().size();
+        final boolean rebuildHitboxes = rebuildDisplays || hasClickActions() == current.hitboxes().isEmpty();
+
+        current = new State(
+                rebuildDisplays ? createDisplays(count) : current.displays(),
+                newSegments,
+                new Vector3f[newSegments.size()],
+                rebuildHitboxes ? createHitboxes(count) : current.hitboxes()
+        );
 
         final var displays = current.displays();
         final var segments = current.segments();
@@ -124,11 +135,43 @@ public final class HologramImpl extends Hologram {
             }
         }
 
+        // map the hitboxes to the hologram and line group they belong to
+        for (int i = 0; i < current.hitboxes().size(); i++) {
+            final Segment segment = segments.isEmpty() ? null : segments.get(i);
+            ClickTargets.register(current.hitboxes().get(i).getId(), new ClickTargets.Target(
+                    this,
+                    segment != null ? segment.firstLine() : -1,
+                    segment != null ? segment.settings().action() : null
+            ));
+        }
+
         this.state = current;
 
-        if (previous != null) {
-            respawnForViewers(previous.displays(), displays);
+        if (rebuildDisplays || rebuildHitboxes) {
+            if (rebuildHitboxes) {
+                previous.hitboxes().forEach(hitbox -> ClickTargets.unregister(hitbox.getId()));
+            }
+            respawnForViewers(previous, current);
         }
+    }
+
+    private boolean hasClickActions() {
+        return !data.getClickActions().isEmpty();
+    }
+
+    /**
+     * @return one hitbox per display, or none if the hologram has no click actions
+     */
+    private List<InteractionHitbox> createHitboxes(int amount) {
+        if (!hasClickActions()) {
+            return List.of();
+        }
+
+        final List<InteractionHitbox> hitboxes = new ArrayList<>(amount);
+        for (int i = 0; i < amount; i++) {
+            hitboxes.add(new InteractionHitbox());
+        }
+        return List.copyOf(hitboxes);
     }
 
     private void applyData(FS_Display fsDisplay, @Nullable Segment segment, float yOffset) {
@@ -212,23 +255,26 @@ public final class HologramImpl extends Hologram {
 
         if (lines.stream().noneMatch(LineSettings::hasSettings)) {
             final String text = String.join("\n", lines.stream().map(LineSettings::text).toList());
-            return List.of(new Segment(LineSettings.parse(""), text, Math.max(1, lines.size())));
+            return List.of(new Segment(LineSettings.parse(""), text, Math.max(1, lines.size()), 0));
         }
 
         final List<Segment> segments = new ArrayList<>();
         LineSettings groupSettings = null;
+        int groupStart = 0;
         List<String> groupLines = new ArrayList<>();
-        for (LineSettings line : lines) {
+        for (int i = 0; i < lines.size(); i++) {
+            final LineSettings line = lines.get(i);
             if (groupSettings != null && !groupSettings.sameSettings(line)) {
-                segments.add(new Segment(groupSettings, String.join("\n", groupLines), groupLines.size()));
+                segments.add(new Segment(groupSettings, String.join("\n", groupLines), groupLines.size(), groupStart));
                 groupLines = new ArrayList<>();
             }
             if (groupLines.isEmpty()) {
                 groupSettings = line;
+                groupStart = i;
             }
             groupLines.add(line.text());
         }
-        segments.add(new Segment(groupSettings, String.join("\n", groupLines), groupLines.size()));
+        segments.add(new Segment(groupSettings, String.join("\n", groupLines), groupLines.size(), groupStart));
 
         return segments;
     }
@@ -252,7 +298,7 @@ public final class HologramImpl extends Hologram {
         return List.copyOf(displays);
     }
 
-    private void respawnForViewers(List<FS_Display> oldDisplays, List<FS_Display> newDisplays) {
+    private void respawnForViewers(State oldState, State newState) {
         for (UUID viewer : getViewers()) {
             final Player player = Bukkit.getPlayer(viewer);
             if (player == null) {
@@ -260,8 +306,8 @@ public final class HologramImpl extends Hologram {
             }
 
             final FS_RealPlayer fsPlayer = new FS_RealPlayer(player);
-            oldDisplays.forEach(display -> FancySitula.ENTITY_FACTORY.despawnEntityFor(fsPlayer, display));
-            newDisplays.forEach(display -> FancySitula.ENTITY_FACTORY.spawnEntityFor(fsPlayer, display));
+            oldState.entities().forEach(entity -> FancySitula.ENTITY_FACTORY.despawnEntityFor(fsPlayer, entity));
+            newState.entities().forEach(entity -> FancySitula.ENTITY_FACTORY.spawnEntityFor(fsPlayer, entity));
             refreshHologram(player);
         }
     }
@@ -293,7 +339,7 @@ public final class HologramImpl extends Hologram {
 //        }
 
         FS_RealPlayer fsPlayer = new FS_RealPlayer(player);
-        displays.forEach(display -> FancySitula.ENTITY_FACTORY.spawnEntityFor(fsPlayer, display));
+        state.entities().forEach(entity -> FancySitula.ENTITY_FACTORY.spawnEntityFor(fsPlayer, entity));
 
         this.viewers.add(player.getUniqueId());
         refreshHologram(player);
@@ -313,7 +359,7 @@ public final class HologramImpl extends Hologram {
         }
 
         FS_RealPlayer fsPlayer = new FS_RealPlayer(player);
-        displays.forEach(display -> FancySitula.ENTITY_FACTORY.despawnEntityFor(fsPlayer, display));
+        state.entities().forEach(entity -> FancySitula.ENTITY_FACTORY.despawnEntityFor(fsPlayer, entity));
 
         this.viewers.remove(player.getUniqueId());
         return true;
@@ -342,7 +388,15 @@ public final class HologramImpl extends Hologram {
                         : getShownText(player);
             }
         }
-        alignSegments(current, texts);
+        final float[] widths = new float[texts.length];
+        float maxWidth = 0;
+        for (int i = 0; i < texts.length; i++) {
+            if (texts[i] != null) {
+                widths[i] = TextWidth.of(texts[i]) * PIXEL_SIZE * current.displays().get(i).getScale().x;
+                maxWidth = Math.max(maxWidth, widths[i]);
+            }
+        }
+        alignSegments(current, widths, maxWidth);
 
         for (int i = 0; i < current.displays().size(); i++) {
             final FS_Display fsDisplay = current.displays().get(i);
@@ -363,6 +417,54 @@ public final class HologramImpl extends Hologram {
 
             FancySitula.ENTITY_FACTORY.setEntityDataFor(fsPlayer, fsDisplay);
         }
+
+        for (int i = 0; i < current.hitboxes().size(); i++) {
+            final InteractionHitbox hitbox = current.hitboxes().get(i);
+            updateHitbox(hitbox, current, i, maxWidth);
+
+            FancySitula.PACKET_FACTORY.createTeleportEntityPacket(
+                            hitbox.getId(),
+                            hitbox.getX(),
+                            hitbox.getY(),
+                            hitbox.getZ(),
+                            0,
+                            0,
+                            true)
+                    .send(fsPlayer);
+            FancySitula.ENTITY_FACTORY.setEntityDataFor(fsPlayer, hitbox);
+        }
+    }
+
+    /**
+     * Places a hitbox around the display it belongs to. Interaction entities are axis-aligned boxes positioned at
+     * their bottom center, so text hitboxes use the width of the widest line on both horizontal axes (the text
+     * faces the player).
+     */
+    private void updateHitbox(InteractionHitbox hitbox, State current, int index, float maxTextWidth) {
+        final var location = data.getLocation();
+        if (!(data instanceof DisplayHologramData displayData)) {
+            return;
+        }
+
+        final Vector3f scale = displayData.getScale();
+        final Vector3f translation = displayData.getTranslation();
+
+        if (data instanceof TextHologramData && index < current.segments().size()) {
+            final Segment segment = current.segments().get(index);
+            final Vector3f base = current.baseTranslations()[index] != null ? current.baseTranslations()[index] : translation;
+            final float height = segment.lineCount() * LINE_HEIGHT * current.displays().get(index).getScale().y;
+
+            hitbox.setLocation(location.x(), location.y() + base.y, location.z());
+            hitbox.setSize(Math.max(maxTextWidth, 0.25f) + HITBOX_PADDING, height + HITBOX_PADDING);
+        } else if (data instanceof ItemHologramData) {
+            // item displays are rendered around their position
+            hitbox.setLocation(location.x() + translation.x, location.y() + translation.y - scale.y / 2f, location.z() + translation.z);
+            hitbox.setSize(Math.max(scale.x, scale.z), scale.y);
+        } else {
+            // block displays are rendered from their position (corner) to +scale
+            hitbox.setLocation(location.x() + translation.x + scale.x / 2f, location.y() + translation.y, location.z() + translation.z + scale.z / 2f);
+            hitbox.setSize(Math.max(scale.x, scale.z), scale.y);
+        }
     }
 
     /**
@@ -370,19 +472,12 @@ public final class HologramImpl extends Hologram {
      * on the hologram. To align segments (separate displays) against each other, they are moved horizontally
      * relative to the widest segment.
      */
-    private void alignSegments(State current, Component[] texts) {
+    private void alignSegments(State current, float[] widths, float maxWidth) {
         if (current.segments().size() < 2 || !(data instanceof TextHologramData textData)) {
             return;
         }
 
         final int count = current.segments().size();
-        final float[] widths = new float[count];
-        float maxWidth = 0;
-        for (int i = 0; i < count; i++) {
-            final FS_Display fsDisplay = current.displays().get(i);
-            widths[i] = TextWidth.of(texts[i]) * PIXEL_SIZE * fsDisplay.getScale().x;
-            maxWidth = Math.max(maxWidth, widths[i]);
-        }
 
         for (int i = 0; i < count; i++) {
             final Vector3f base = current.baseTranslations()[i];
@@ -406,14 +501,21 @@ public final class HologramImpl extends Hologram {
     /**
      * A group of consecutive text lines rendered by one display entity.
      */
-    private record Segment(LineSettings settings, String rawText, int lineCount) {
+    private record Segment(LineSettings settings, String rawText, int lineCount, int firstLine) {
     }
 
     /**
      * @param baseTranslations translation of each text segment before the per-player alignment offset
+     * @param hitboxes         one clickable hitbox per display, or none if the hologram has no click actions
      */
-    private record State(List<FS_Display> displays, List<Segment> segments, Vector3f[] baseTranslations) {
-        static final State EMPTY = new State(List.of(), List.of(), new Vector3f[0]);
+    private record State(List<FS_Display> displays, List<Segment> segments, Vector3f[] baseTranslations, List<InteractionHitbox> hitboxes) {
+        static final State EMPTY = new State(List.of(), List.of(), new Vector3f[0], List.of());
+
+        List<FS_Entity> entities() {
+            final List<FS_Entity> entities = new ArrayList<>(displays);
+            entities.addAll(hitboxes);
+            return entities;
+        }
     }
 
 }

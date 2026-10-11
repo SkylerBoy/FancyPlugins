@@ -285,6 +285,7 @@ public final class FancyHolograms extends JavaPlugin implements FancyHologramsPl
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         getServer().getPluginManager().registerEvents(new WorldListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerLoadedListener(this), this);
+        getServer().getPluginManager().registerEvents(new HologramClickListener(), this);
 
         if (PluginUtils.isFancyNpcsEnabled()) {
             getServer().getPluginManager().registerEvents(new NpcListener(this), this);

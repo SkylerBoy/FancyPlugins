@@ -26,6 +26,7 @@ Text holograms support per-line settings using tags at the start of a line:
 | `<see_through:true/false>` | See through blocks |
 | `<align:left/center/right>` | Aligns the line against the widest line of the hologram |
 | `<offset:x,y,z>` | Extra translation for the line |
+| `<action:id>` | Click actions of the line (see [clickable holograms](tutorials/clickable-holograms.md)) |
 
 Only tags at the very beginning of the line are parsed. Settings that are not set are inherited from the hologram.
 Consecutive lines with the same settings are rendered by the same display entity.
@@ -36,7 +37,7 @@ To add a blank line in a hologram, use `<reset>` on a new line.
 
 ### How to make holograms clickable?
 
-Holograms currently aren't clickable themselves, but [here's](tutorials/clickable-holograms.md) a workaround
+See [clickable holograms](tutorials/clickable-holograms.md).
 
 ### How to make the hologram not to rotate?
 

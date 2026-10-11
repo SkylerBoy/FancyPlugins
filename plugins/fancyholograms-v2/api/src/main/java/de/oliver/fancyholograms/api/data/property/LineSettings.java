@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
  *     <li>{@code <see_through:true|false>}</li>
  *     <li>{@code <align:left|center|right>} / {@code <text_alignment:...>}</li>
  *     <li>{@code <offset:x,y,z>} / {@code <translation:x,y,z>} - added to the hologram translation</li>
+ *     <li>{@code <action:id>} - click action set of the line (see {@link ClickActions})</li>
  * </ul>
  * Only tags at the start of the line are parsed; unknown or invalid tags stop the parsing and are left in the text.
  * Settings that are not declared are inherited from the hologram.
@@ -39,6 +40,7 @@ import java.util.regex.Pattern;
  * @param seeThrough  see through, or null to inherit
  * @param alignment   text alignment, or null to inherit
  * @param offset      translation offset, or null for none
+ * @param action      id of the click action set, or null for none
  */
 public record LineSettings(
         @NotNull String text,
@@ -47,7 +49,8 @@ public record LineSettings(
         @Nullable Boolean textShadow,
         @Nullable Boolean seeThrough,
         @Nullable TextDisplay.TextAlignment alignment,
-        @Nullable Vector3f offset
+        @Nullable Vector3f offset,
+        @Nullable String action
 ) {
 
     /**
@@ -70,6 +73,7 @@ public record LineSettings(
         Boolean seeThrough = null;
         TextDisplay.TextAlignment alignment = null;
         Vector3f offset = null;
+        String action = null;
 
         String rest = raw;
         while (true) {
@@ -89,9 +93,10 @@ public record LineSettings(
                     case "see_through", "seethrough" -> seeThrough = parseBoolean(value);
                     case "align", "alignment", "text_alignment" -> alignment = TextDisplay.TextAlignment.valueOf(value.toUpperCase(Locale.ROOT));
                     case "offset", "translation" -> offset = parseVector(value, false);
+                    case "action" -> action = parseActionId(value);
                     default -> {
                         // not one of our tags (probably a MiniMessage tag) -> stop parsing
-                        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset);
+                        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset, action);
                     }
                 }
             } catch (IllegalArgumentException e) {
@@ -102,7 +107,7 @@ public record LineSettings(
             rest = rest.substring(matcher.end());
         }
 
-        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset);
+        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset, action);
     }
 
     /**
@@ -130,6 +135,13 @@ public record LineSettings(
         );
     }
 
+    private static String parseActionId(String value) {
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Empty action id");
+        }
+        return value.toLowerCase(Locale.ROOT);
+    }
+
     private static boolean parseBoolean(String value) {
         return switch (value.toLowerCase(Locale.ROOT)) {
             case "true", "yes", "on" -> true;
@@ -155,7 +167,7 @@ public record LineSettings(
      * @return whether this line declares any setting
      */
     public boolean hasSettings() {
-        return scale != null || background != null || textShadow != null || seeThrough != null || alignment != null || offset != null;
+        return scale != null || background != null || textShadow != null || seeThrough != null || alignment != null || offset != null || action != null;
     }
 
     /**
@@ -167,6 +179,7 @@ public record LineSettings(
                 && Objects.equals(textShadow, other.textShadow)
                 && Objects.equals(seeThrough, other.seeThrough)
                 && alignment == other.alignment
-                && Objects.equals(offset, other.offset);
+                && Objects.equals(offset, other.offset)
+                && Objects.equals(action, other.action);
     }
 }

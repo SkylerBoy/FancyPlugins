@@ -9,12 +9,56 @@ This is the old documentation site for FancyInnovations, which is no longer main
 The new documentation site can be found at [fancyinnovations.com/docs/minecraft-plugins/fancyholograms](https://fancyinnovations.com/docs/minecraft-plugins/fancyholograms).
 !!!
 
-Interactions with holograms is not a feature of FancyHolograms yet, but there is a workaround for this.
+Holograms can run actions when a player clicks them. The actions are configured in the hologram file
+(`plugins/FancyHolograms/holograms/<name>.yml`), followed by `/fancyholograms reload`.
 
-1. Create your hologram with the text you want.
-2. Install [FancyNpcs](../../fancynpcs/getting-started.md)
-3. Create a new npc and set the type to "INTERACTION" (`/npc type (npc name) INTERACTION`)
-4. Remove the name tag of the npc (`/npc displayname (npc name) <empty>`)
-5. Position the npc to the same location as the hologram (press F3+B to see the hitbox)
-6. Modify the size of the hitbox to fit the hologram (`/npc attributes (npc name) set (width/height) (size)`)
-7. Add an interaction action to the npc ([action system](../../fancynpcs/tutorials/action-system.md))
+```yaml
+click:
+  cooldown: 500            # milliseconds between clicks of the same player
+  actions:
+    hologram:              # clicking anywhere on the hologram
+      any:
+        - 'message: <gray>You clicked the hologram'
+    shop:                  # used by lines starting with <action:shop>
+      left:
+        - 'player: shop'
+      right:
+        - 'console: give <player> diamond 1'
+        - 'sound: entity.experience_orb.pickup 1 1'
+```
+
+### Click types
+
+Every action set can have the lists `left`, `right` and `any`. `any` is used for click types without their own list.
+
+### Clickable lines
+
+Add `<action:id>` at the start of a line (like the other per-line tags) to use the action set `id` for that line:
+
+```
+<action:shop><gold>[Open shop]
+```
+
+For each click type, the actions of the line override the `hologram` actions. If the line has no actions for that
+click type, the `hologram` actions are used.
+
+### Actions
+
+| Action | Description |
+|--------|-------------|
+| `player: <command>` | Command executed by the player |
+| `console: <command>` | Command executed by the console |
+| `suggest: <command>` / `suggest: <command> \| <text>` | Sends a chat message; clicking it puts the command in the chat input |
+| `message: <text>` | Sends a message (MiniMessage and placeholders) |
+| `sound: <sound> [volume] [pitch]` | Plays a sound to the player |
+
+`<player>`, `<uuid>` and `<world>` are replaced in every action.
+
+Minecraft doesn't allow servers to write in the chat input directly, so `suggest` sends a clickable message.
+
+### Notes
+
+- Clicks are detected with invisible interaction entities that only exist for the players that see the hologram.
+  They are only created for holograms with click actions.
+- While looking at a clickable hologram, players can't break or place blocks behind it.
+- Plugins can listen to the `HologramClickEvent` (and cancel it).

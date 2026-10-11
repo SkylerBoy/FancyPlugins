@@ -223,6 +223,7 @@ public class TextHologramData extends DisplayHologramData {
                 .setVisibility(this.getVisibility())
                 .setPersistent(this.isPersistent())
                 .setLinkedNpcName(this.getLinkedNpcName());
+        textHologramData.setClickActions(this.getClickActions().copy());
 
         return textHologramData;
     }

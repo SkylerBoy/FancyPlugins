@@ -1,6 +1,7 @@
 package de.oliver.fancyholograms.api.data;
 
 import de.oliver.fancyholograms.api.FancyHologramsPlugin;
+import de.oliver.fancyholograms.api.data.property.ClickActions;
 import de.oliver.fancyholograms.api.data.property.Visibility;
 import de.oliver.fancyholograms.api.hologram.HologramType;
 import org.bukkit.Bukkit;
@@ -29,6 +30,7 @@ public class HologramData implements YamlData {
     private boolean persistent = DEFAULT_PERSISTENCE;
     private String linkedNpcName;
     private String filePath;
+    private ClickActions clickActions = new ClickActions();
 
     /**
      * @param name     Name of hologram
@@ -126,6 +128,19 @@ public class HologramData implements YamlData {
         return this;
     }
 
+    /**
+     * @return the click actions of the hologram. Call {@link #setClickActions(ClickActions)} after modifying them.
+     */
+    public @NotNull ClickActions getClickActions() {
+        return clickActions;
+    }
+
+    public HologramData setClickActions(@NotNull ClickActions clickActions) {
+        this.clickActions = clickActions;
+        setHasChanges(true);
+        return this;
+    }
+
     public boolean isPersistent() {
         return persistent;
     }
@@ -172,6 +187,8 @@ public class HologramData implements YamlData {
                     return visibleByDefault ? Visibility.ALL : Visibility.PERMISSION_REQUIRED;
                 });
         linkedNpcName = section.getString("linkedNpc");
+        clickActions = new ClickActions();
+        clickActions.read(section.getConfigurationSection("click"));
 
         return true;
     }
@@ -190,6 +207,7 @@ public class HologramData implements YamlData {
         section.set("visibility", visibility.name());
         section.set("persistent", persistent);
         section.set("linkedNpc", linkedNpcName);
+        clickActions.write(section, "click");
 
         return true;
     }
@@ -199,6 +217,7 @@ public class HologramData implements YamlData {
                 .setVisibilityDistance(this.getVisibilityDistance())
                 .setVisibility(this.getVisibility())
                 .setPersistent(this.isPersistent())
-                .setLinkedNpcName(this.getLinkedNpcName());
+                .setLinkedNpcName(this.getLinkedNpcName())
+                .setClickActions(this.getClickActions().copy());
     }
 }

@@ -67,6 +67,7 @@ public class ItemHologramData extends DisplayHologramData {
                 .setVisibility(this.getVisibility())
                 .setPersistent(this.isPersistent())
                 .setLinkedNpcName(this.getLinkedNpcName());
+        itemHologramData.setClickActions(this.getClickActions().copy());
 
         return itemHologramData;
     }
