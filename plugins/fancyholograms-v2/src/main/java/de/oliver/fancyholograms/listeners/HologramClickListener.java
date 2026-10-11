@@ -7,12 +7,20 @@ import de.oliver.fancyholograms.api.hologram.Hologram;
 import de.oliver.fancyholograms.api.events.HologramClickEvent;
 import de.oliver.fancyholograms.hologram.click.ClickActionExecutor;
 import de.oliver.fancyholograms.hologram.click.ClickTargets;
+import de.oliver.fancyholograms.hologram.click.InteractionHitbox;
 import de.oliver.fancyholograms.hologram.version.HologramImpl;
+import org.bukkit.Location;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerAnimationEvent;
+import org.bukkit.event.player.PlayerAnimationType;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.util.RayTraceResult;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -37,6 +45,9 @@ public final class HologramClickListener implements Listener {
             return;
         }
 
+        FancyHolograms.get().getFancyLogger().debug("Hologram hitbox click: hologram=" + hologram.getName() + ", attack=" + event.isAttack()
+                + ", hand=" + event.getHand() + ", relativePosition=" + event.getClickedRelativePosition());
+
         final ClickActions.ClickType type;
         if (event.isAttack()) {
             type = ClickActions.ClickType.LEFT;
@@ -48,21 +59,73 @@ public final class HologramClickListener implements Listener {
             type = ClickActions.ClickType.RIGHT;
         }
 
-        final Player player = event.getPlayer();
-
         // the hologram could have been removed or reloaded since the hitbox was created
         final Hologram registered = FancyHolograms.get().getHologramsManager().getHologram(hologram.getName()).orElse(null);
         if (registered != hologram) {
             ClickTargets.unregister(event.getEntityId());
             return;
         }
+
+        handleClick(event.getPlayer(), hologram, type);
+    }
+
+    /**
+     * Left clicks on packet-only entities don't always reach the server as an attack (depending on the version),
+     * but the client always swings the arm. On an arm swing, the hologram the player is looking at (if any, and
+     * closer than the targeted block) is clicked. The hitboxes don't swing the arm on right click (no "response").
+     */
+    @EventHandler
+    public void onArmSwing(@NotNull final PlayerAnimationEvent event) {
+        if (event.getAnimationType() != PlayerAnimationType.ARM_SWING) {
+            return;
+        }
+
+        final Player player = event.getPlayer();
+        final Location eye = player.getEyeLocation();
+        final Vector direction = eye.getDirection();
+        final double reach = getInteractionRange(player);
+
+        Hologram target = null;
+        double targetDistance = Double.MAX_VALUE;
+        for (final Hologram hologram : FancyHolograms.get().getHologramsManager().getHolograms()) {
+            if (!(hologram instanceof HologramImpl impl) || !hologram.isViewer(player)) {
+                continue;
+            }
+
+            final InteractionHitbox hitbox = impl.getHitbox();
+            if (hitbox == null || !player.getWorld().equals(hologram.getData().getLocation().getWorld())) {
+                continue;
+            }
+
+            final double distance = hitbox.rayDistance(eye.getX(), eye.getY(), eye.getZ(), direction.getX(), direction.getY(), direction.getZ(), reach);
+            if (distance >= 0 && distance < targetDistance) {
+                target = hologram;
+                targetDistance = distance;
+            }
+        }
+
+        if (target == null) {
+            return;
+        }
+
+        // a block in front of the hologram is hit first
+        final RayTraceResult block = player.rayTraceBlocks(targetDistance);
+        if (block != null && block.getHitPosition().distance(eye.toVector()) < targetDistance) {
+            return;
+        }
+
+        FancyHolograms.get().getFancyLogger().debug("Hologram arm swing click: hologram=" + target.getName());
+        handleClick(player, target, ClickActions.ClickType.LEFT);
+    }
+
+    private void handleClick(@NotNull final Player player, @NotNull final Hologram hologram, @NotNull final ClickActions.ClickType type) {
         if (!hologram.isViewer(player)) {
             return;
         }
 
         final ClickActions clickActions = hologram.getData().getClickActions();
 
-        // cooldown per player and hologram
+        // cooldown per player and hologram (also prevents running a left click twice: attack + arm swing)
         final long now = System.currentTimeMillis();
         final Map<String, Long> playerClicks = lastClicks.computeIfAbsent(player.getUniqueId(), uuid -> new ConcurrentHashMap<>());
         final Long last = playerClicks.get(hologram.getName());
@@ -83,6 +146,11 @@ public final class HologramClickListener implements Listener {
         }
 
         ClickActionExecutor.run(player, clickEvent.getActions());
+    }
+
+    private static double getInteractionRange(Player player) {
+        final AttributeInstance attribute = player.getAttribute(Attribute.ENTITY_INTERACTION_RANGE);
+        return attribute != null ? attribute.getValue() : 3.0;
     }
 
     @EventHandler
