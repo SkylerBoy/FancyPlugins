@@ -46,7 +46,7 @@ click type, the `hologram` actions are used.
 
 | Action | Description |
 |--------|-------------|
-| `player: <command>` | Command executed by the player |
+| `player: <command>` | Command executed by the player, as if typed in the chat |
 | `console: <command>` | Command executed by the console |
 | `suggest: <command>` / `suggest: <command> \| <text>` | Sends a chat message; clicking it puts the command in the chat input |
 | `message: <text>` | Sends a message (MiniMessage and placeholders) |

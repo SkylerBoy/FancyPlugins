@@ -15,7 +15,7 @@ import java.util.Locale;
 /**
  * Runs the click actions of a hologram. Supported actions:
  * <ul>
- *     <li>{@code player: <command>} - command executed by the player</li>
+ *     <li>{@code player: <command>} - command executed by the player (as if typed in the chat)</li>
  *     <li>{@code console: <command>} - command executed by the console</li>
  *     <li>{@code suggest: <command> [| <text>]} - sends a chat message that puts the command in the chat input when clicked</li>
  *     <li>{@code message: <text>} - sends a message (MiniMessage and placeholders)</li>
@@ -42,7 +42,8 @@ public final class ClickActionExecutor {
             String value = replacePlaceholders(action.substring(colon + 1).trim(), player);
 
             switch (type) {
-                case "player" -> runForPlayer(player, () -> player.performCommand(stripSlash(value)));
+                // like typing it in the chat: aliases, command listeners and "unknown command" work as usual
+                case "player" -> runForPlayer(player, () -> player.chat("/" + stripSlash(value)));
                 case "console" -> Bukkit.getGlobalRegionScheduler().run(FancyHolograms.get(),
                         task -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), stripSlash(value)));
                 case "suggest" -> runForPlayer(player, () -> suggest(player, value));
