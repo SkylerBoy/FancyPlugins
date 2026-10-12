@@ -25,11 +25,16 @@ click:
       right:
         - 'console: give <player> diamond 1'
         - 'sound: entity.experience_orb.pickup 1 1'
+      shift_right:
+        - 'message: <gray>Shift + right click'
 ```
 
 ### Click types
 
-Every action set can have the lists `left`, `right` and `any`. `any` is used for click types without their own list.
+Every action set can have the lists `left`, `right`, `shift_left`, `shift_right` and `any`:
+
+- A shift click (while sneaking) without its own list uses `left` / `right`.
+- A click type without its own list uses `any`.
 
 ### Clickable lines
 

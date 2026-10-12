@@ -58,7 +58,7 @@ public final class HologramClickListener implements Listener {
         if (!event.isAttack() && event.getHand() != EquipmentSlot.HAND) {
             return;
         }
-        final ClickActions.ClickType type = event.isAttack() ? ClickActions.ClickType.LEFT : ClickActions.ClickType.RIGHT;
+        final ClickActions.ClickType type = ClickActions.ClickType.of(event.isAttack(), event.getPlayer().isSneaking());
 
         // the hologram could have been removed or reloaded since the hitbox was created
         final Hologram registered = FancyHolograms.get().getHologramsManager().getHologram(hologram.getName()).orElse(null);
@@ -124,7 +124,7 @@ public final class HologramClickListener implements Listener {
         }
 
         FancyHolograms.get().getFancyLogger().debug("Hologram arm swing click: hologram=" + target.getName());
-        handleClick(player, target, ClickActions.ClickType.LEFT);
+        handleClick(player, target, ClickActions.ClickType.of(true, player.isSneaking()));
     }
 
     private void handleClick(@NotNull final Player player, @NotNull final Hologram hologram, @NotNull final ClickActions.ClickType type) {

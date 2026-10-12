@@ -23,7 +23,11 @@ import java.util.*;
  *       right:
  *         - 'console: give &lt;player&gt; diamond 1'
  *         - 'sound: entity.experience_orb.pickup 1 1'
+ *       shift_right:
+ *         - 'message: &lt;gray&gt;Shift + right click'
  * </pre>
+ * Click types: {@code left}, {@code right}, {@code shift_left}, {@code shift_right} and {@code any}.
+ * A shift click without its own list uses the normal click list, and a click without its own list uses {@code any}.
  * A line with an {@code <action:id>} tag uses that action set. For each click type, the actions of the line
  * override the hologram actions; if the line has no actions for that click type, the hologram actions are used.
  */
@@ -39,7 +43,8 @@ public final class ClickActions {
             "Click actions of the hologram",
             "- 'hologram' runs when clicking anywhere on the hologram",
             "- Other action sets are used by the lines starting with <action:id> (e.g. <action:shop>)",
-            "- Each set can have the lists 'left', 'right' and 'any' ('any' is used for clicks without their own list)",
+            "- Each set can have the lists 'left', 'right', 'shift_left', 'shift_right' and 'any'",
+            "  (a shift click without its own list uses 'left'/'right', and a click without its own list uses 'any')",
             "- The actions of a line override the 'hologram' actions for that click type",
             "Actions:",
             "- 'player: <command>'               command executed by the player (as if typed in the chat)",
@@ -54,25 +59,56 @@ public final class ClickActions {
     private long cooldown = DEFAULT_COOLDOWN;
 
     public enum ClickType {
-        LEFT, RIGHT;
+        LEFT, RIGHT, SHIFT_LEFT, SHIFT_RIGHT;
+
+        public static @NotNull ClickType of(boolean left, boolean shift) {
+            if (left) {
+                return shift ? SHIFT_LEFT : LEFT;
+            }
+            return shift ? SHIFT_RIGHT : RIGHT;
+        }
 
         public @NotNull String key() {
             return name().toLowerCase(Locale.ROOT);
         }
+
+        public boolean isShift() {
+            return this == SHIFT_LEFT || this == SHIFT_RIGHT;
+        }
+
+        public boolean isLeft() {
+            return this == LEFT || this == SHIFT_LEFT;
+        }
+
+        /**
+         * @return the click type without shift
+         */
+        public @NotNull ClickType withoutShift() {
+            return isLeft() ? LEFT : RIGHT;
+        }
     }
 
     /**
-     * Actions per click type. The "any" list is used for click types without their own list.
+     * Actions per click type. A shift click without its own list uses the normal click list, and a click type
+     * without its own list uses the "any" list.
      */
-    public record ActionSet(@NotNull List<String> any, @NotNull List<String> left, @NotNull List<String> right) {
+    public record ActionSet(@NotNull List<String> any, @NotNull Map<ClickType, List<String>> byType) {
+
+        public ActionSet {
+            any = List.copyOf(any);
+            byType = Map.copyOf(byType);
+        }
 
         public @NotNull List<String> get(@NotNull ClickType type) {
-            List<String> specific = type == ClickType.LEFT ? left : right;
-            return specific.isEmpty() ? any : specific;
+            List<String> specific = byType.getOrDefault(type, List.of());
+            if (!specific.isEmpty()) {
+                return specific;
+            }
+            return type.isShift() ? get(type.withoutShift()) : any;
         }
 
         public boolean isEmpty() {
-            return any.isEmpty() && left.isEmpty() && right.isEmpty();
+            return any.isEmpty() && byType.values().stream().allMatch(List::isEmpty);
         }
     }
 
@@ -141,11 +177,14 @@ public final class ClickActions {
                 continue;
             }
 
-            setActionSet(id, new ActionSet(
-                    List.copyOf(set.getStringList("any")),
-                    List.copyOf(set.getStringList(ClickType.LEFT.key())),
-                    List.copyOf(set.getStringList(ClickType.RIGHT.key()))
-            ));
+            Map<ClickType, List<String>> byType = new EnumMap<>(ClickType.class);
+            for (ClickType type : ClickType.values()) {
+                List<String> list = set.getStringList(type.key());
+                if (!list.isEmpty()) {
+                    byType.put(type, list);
+                }
+            }
+            setActionSet(id, new ActionSet(set.getStringList("any"), byType));
         }
     }
 
@@ -164,9 +203,15 @@ public final class ClickActions {
         for (Map.Entry<String, ActionSet> entry : actionSets.entrySet()) {
             ConfigurationSection set = actions.createSection(entry.getKey());
             ActionSet actionSet = entry.getValue();
-            if (!actionSet.any().isEmpty()) set.set("any", actionSet.any());
-            if (!actionSet.left().isEmpty()) set.set(ClickType.LEFT.key(), actionSet.left());
-            if (!actionSet.right().isEmpty()) set.set(ClickType.RIGHT.key(), actionSet.right());
+            if (!actionSet.any().isEmpty()) {
+                set.set("any", actionSet.any());
+            }
+            for (ClickType type : ClickType.values()) {
+                List<String> list = actionSet.byType().getOrDefault(type, List.of());
+                if (!list.isEmpty()) {
+                    set.set(type.key(), list);
+                }
+            }
         }
     }
 
