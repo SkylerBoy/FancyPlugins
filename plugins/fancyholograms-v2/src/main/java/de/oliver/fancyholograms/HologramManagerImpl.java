@@ -9,6 +9,7 @@ import de.oliver.fancyholograms.api.data.TextHologramData;
 import de.oliver.fancyholograms.api.events.HologramsLoadedEvent;
 import de.oliver.fancyholograms.api.events.HologramsUnloadedEvent;
 import de.oliver.fancyholograms.api.hologram.Hologram;
+import de.oliver.fancyholograms.hologram.click.ClickTargets;
 import de.oliver.fancynpcs.api.FancyNpcsPlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -119,6 +120,7 @@ public final class HologramManagerImpl implements HologramManager {
         Optional<Hologram> optionalHologram = Optional.ofNullable(this.holograms.remove(name.toLowerCase(Locale.ROOT)));
 
         optionalHologram.ifPresent(hologram -> {
+                    ClickTargets.unregister(hologram);
                     for (UUID viewer : hologram.getViewers()) {
                         Player player = Bukkit.getPlayer(viewer);
                         if (player != null) {
@@ -286,6 +288,7 @@ public final class HologramManagerImpl implements HologramManager {
 
             for (final var hologram : this.getPersistentHolograms()) {
                 this.holograms.remove(hologram.getName());
+                ClickTargets.unregister(hologram);
                 unloaded.add(hologram);
 
                 for (UUID viewer : hologram.getViewers()) {
@@ -312,6 +315,7 @@ public final class HologramManagerImpl implements HologramManager {
 
             for (final Hologram hologram : h) {
                 this.holograms.remove(hologram.getName());
+                ClickTargets.unregister(hologram);
                 online.forEach(hologram::forceHideHologram);
             }
 

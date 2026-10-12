@@ -153,14 +153,6 @@ public final class HologramImpl extends Hologram {
         }
     }
 
-    /**
-     * @return the click hitbox of the hologram, or null if it has no click actions
-     */
-    public @Nullable InteractionHitbox getHitbox() {
-        final var hitboxes = state.hitboxes();
-        return hitboxes.isEmpty() ? null : hitboxes.getFirst();
-    }
-
     private boolean hasClickActions() {
         return !data.getClickActions().isEmpty();
     }
