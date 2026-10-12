@@ -66,6 +66,7 @@ public class BlockHologramData extends DisplayHologramData {
                 .setVisibility(this.getVisibility())
                 .setPersistent(this.isPersistent())
                 .setLinkedNpcName(getLinkedNpcName());
+        blockHologramData.setClickActions(this.getClickActions().copy());
 
         return blockHologramData;
     }
