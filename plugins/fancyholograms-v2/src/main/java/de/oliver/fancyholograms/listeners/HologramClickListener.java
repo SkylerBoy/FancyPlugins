@@ -104,7 +104,9 @@ public final class HologramClickListener implements Listener {
                     "Hologram arm swing check: hologram=%s, hitbox=(%.2f, %.2f, %.2f) size=%.2fx%.2f, eye=(%.2f, %.2f, %.2f), reach=%.2f, distance=%.2f",
                     hologram.getName(), hitbox.getX(), hitbox.getY(), hitbox.getZ(), hitbox.getWidth(), hitbox.getHeight(),
                     eye.getX(), eye.getY(), eye.getZ(), reach, distance));
-            if (distance >= 0 && distance < targetDistance) {
+            // distance 0: the eyes are inside the hitbox. Any swing would hit it, whatever the player is looking at,
+            // and the client sends the attack itself in that case.
+            if (distance > 0 && distance < targetDistance) {
                 target = hologram;
                 targetDistance = distance;
             }
