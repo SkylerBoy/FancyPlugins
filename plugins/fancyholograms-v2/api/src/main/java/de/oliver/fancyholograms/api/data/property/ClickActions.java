@@ -35,6 +35,21 @@ public final class ClickActions {
     public static final String HOLOGRAM_ACTION_ID = "hologram";
     public static final long DEFAULT_COOLDOWN = 500;
 
+    private static final List<String> SECTION_COMMENTS = List.of(
+            "Click actions of the hologram",
+            "- 'hologram' runs when clicking anywhere on the hologram",
+            "- Other action sets are used by the lines starting with <action:id> (e.g. <action:shop>)",
+            "- Each set can have the lists 'left', 'right' and 'any' ('any' is used for clicks without their own list)",
+            "- The actions of a line override the 'hologram' actions for that click type",
+            "Actions:",
+            "- 'player: <command>'               command executed by the player (as if typed in the chat)",
+            "- 'console: <command>'              command executed by the console",
+            "- 'suggest: <command> | <text>'     clickable chat message that writes the command in the chat input",
+            "- 'message: <text>'                 message (MiniMessage and PlaceholderAPI)",
+            "- 'sound: <sound> [volume] [pitch]' sound played to the player",
+            "Placeholders in every action: <player>, <uuid>, <world>"
+    );
+
     private final Map<String, ActionSet> actionSets = new LinkedHashMap<>();
     private long cooldown = DEFAULT_COOLDOWN;
 
@@ -142,7 +157,9 @@ public final class ClickActions {
 
         parent.set(path, null);
         ConfigurationSection section = parent.createSection(path);
+        parent.setComments(path, SECTION_COMMENTS);
         section.set("cooldown", cooldown);
+        section.setInlineComments("cooldown", List.of("milliseconds between two clicks of the same player"));
         ConfigurationSection actions = section.createSection("actions");
         for (Map.Entry<String, ActionSet> entry : actionSets.entrySet()) {
             ConfigurationSection set = actions.createSection(entry.getKey());
