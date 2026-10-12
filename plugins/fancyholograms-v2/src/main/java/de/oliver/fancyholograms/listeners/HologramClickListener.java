@@ -38,6 +38,12 @@ public final class HologramClickListener implements Listener {
      */
     private final Map<UUID, Map<String, Long>> lastClicks = new ConcurrentHashMap<>();
 
+    /**
+     * Older versions send a right click twice ("interact" and "interact at"), newer versions once. Clicks of the
+     * same type on the same hologram within this time are treated as one, even if the configured cooldown is 0.
+     */
+    private static final long DUPLICATE_CLICK_MS = 100;
+
     @EventHandler
     public void onUseUnknownEntity(@NotNull final PlayerUseUnknownEntityEvent event) {
         final Hologram hologram = ClickTargets.get(event.getEntityId());
@@ -48,16 +54,11 @@ public final class HologramClickListener implements Listener {
         FancyHolograms.get().getFancyLogger().debug("Hologram hitbox click: hologram=" + hologram.getName() + ", attack=" + event.isAttack()
                 + ", hand=" + event.getHand() + ", relativePosition=" + event.getClickedRelativePosition());
 
-        final ClickActions.ClickType type;
-        if (event.isAttack()) {
-            type = ClickActions.ClickType.LEFT;
-        } else {
-            // right clicks are sent once per hand and also as "interact at" -> only handle one of them
-            if (event.getHand() != EquipmentSlot.HAND || event.getClickedRelativePosition() != null) {
-                return;
-            }
-            type = ClickActions.ClickType.RIGHT;
+        // the event can also be called for the off hand
+        if (!event.isAttack() && event.getHand() != EquipmentSlot.HAND) {
+            return;
         }
+        final ClickActions.ClickType type = event.isAttack() ? ClickActions.ClickType.LEFT : ClickActions.ClickType.RIGHT;
 
         // the hologram could have been removed or reloaded since the hitbox was created
         final Hologram registered = FancyHolograms.get().getHologramsManager().getHologram(hologram.getName()).orElse(null);
@@ -135,7 +136,7 @@ public final class HologramClickListener implements Listener {
         final long now = System.currentTimeMillis();
         final Map<String, Long> playerClicks = lastClicks.computeIfAbsent(player.getUniqueId(), uuid -> new ConcurrentHashMap<>());
         final Long last = playerClicks.get(hologram.getName());
-        if (last != null && now - last < clickActions.getCooldown()) {
+        if (last != null && now - last < Math.max(clickActions.getCooldown(), DUPLICATE_CLICK_MS)) {
             FancyHolograms.get().getFancyLogger().debug("Hologram click on cooldown: hologram=" + hologram.getName() + ", type=" + type);
             return;
         }
