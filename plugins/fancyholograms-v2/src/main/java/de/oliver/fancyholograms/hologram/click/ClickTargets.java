@@ -4,6 +4,7 @@ import de.oliver.fancyholograms.api.hologram.Hologram;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,7 +26,18 @@ public final class ClickTargets {
         TARGETS.remove(entityId);
     }
 
+    public static void unregister(@NotNull Hologram hologram) {
+        TARGETS.values().removeIf(registered -> registered == hologram);
+    }
+
     public static @Nullable Hologram get(int entityId) {
         return TARGETS.get(entityId);
+    }
+
+    /**
+     * @return the holograms that currently have a hitbox (holograms with click actions)
+     */
+    public static @NotNull Collection<Hologram> holograms() {
+        return TARGETS.values();
     }
 }

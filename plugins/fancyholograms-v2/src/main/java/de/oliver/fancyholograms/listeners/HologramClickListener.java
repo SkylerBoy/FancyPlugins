@@ -51,9 +51,6 @@ public final class HologramClickListener implements Listener {
             return;
         }
 
-        FancyHolograms.get().getFancyLogger().debug("Hologram hitbox click: hologram=" + hologram.getName() + ", attack=" + event.isAttack()
-                + ", hand=" + event.getHand() + ", relativePosition=" + event.getClickedRelativePosition());
-
         // the event can also be called for the off hand
         if (!event.isAttack() && event.getHand() != EquipmentSlot.HAND) {
             return;
@@ -77,7 +74,6 @@ public final class HologramClickListener implements Listener {
      */
     @EventHandler
     public void onArmSwing(@NotNull final PlayerAnimationEvent event) {
-        FancyHolograms.get().getFancyLogger().debug("Hologram arm swing: player=" + event.getPlayer().getName() + ", type=" + event.getAnimationType());
         if (event.getAnimationType() != PlayerAnimationType.ARM_SWING) {
             return;
         }
@@ -89,8 +85,19 @@ public final class HologramClickListener implements Listener {
 
         Hologram target = null;
         double targetDistance = Double.MAX_VALUE;
-        for (final Hologram hologram : FancyHolograms.get().getHologramsManager().getHolograms()) {
-            if (!(hologram instanceof HologramImpl impl) || !hologram.isViewer(player)) {
+        // only holograms with click actions have a hitbox
+        for (final Hologram hologram : List.copyOf(ClickTargets.holograms())) {
+            if (!(hologram instanceof HologramImpl impl)) {
+                continue;
+            }
+
+            // removed or reloaded holograms are not unregistered when they are removed, clean them up here
+            if (FancyHolograms.get().getHologramsManager().getHologram(hologram.getName()).orElse(null) != hologram) {
+                ClickTargets.unregister(hologram);
+                continue;
+            }
+
+            if (!hologram.isViewer(player)) {
                 continue;
             }
 
@@ -100,10 +107,6 @@ public final class HologramClickListener implements Listener {
             }
 
             final double distance = hitbox.rayDistance(eye.getX(), eye.getY(), eye.getZ(), direction.getX(), direction.getY(), direction.getZ(), reach);
-            FancyHolograms.get().getFancyLogger().debug(String.format(java.util.Locale.ROOT,
-                    "Hologram arm swing check: hologram=%s, hitbox=(%.2f, %.2f, %.2f) size=%.2fx%.2f, eye=(%.2f, %.2f, %.2f), reach=%.2f, distance=%.2f",
-                    hologram.getName(), hitbox.getX(), hitbox.getY(), hitbox.getZ(), hitbox.getWidth(), hitbox.getHeight(),
-                    eye.getX(), eye.getY(), eye.getZ(), reach, distance));
             // distance 0: the eyes are inside the hitbox. Any swing would hit it, whatever the player is looking at,
             // and the client sends the attack itself in that case.
             if (distance > 0 && distance < targetDistance) {
@@ -119,11 +122,9 @@ public final class HologramClickListener implements Listener {
         // a block in front of the hologram is hit first
         final RayTraceResult block = player.rayTraceBlocks(targetDistance);
         if (block != null && block.getHitPosition().distance(eye.toVector()) < targetDistance) {
-            FancyHolograms.get().getFancyLogger().debug("Hologram arm swing: block in front of hologram " + target.getName() + ": " + block.getHitBlock());
             return;
         }
 
-        FancyHolograms.get().getFancyLogger().debug("Hologram arm swing click: hologram=" + target.getName());
         handleClick(player, target, ClickActions.ClickType.of(true, player.isSneaking()));
     }
 
@@ -139,7 +140,6 @@ public final class HologramClickListener implements Listener {
         final Map<String, Long> playerClicks = lastClicks.computeIfAbsent(player.getUniqueId(), uuid -> new ConcurrentHashMap<>());
         final Long last = playerClicks.get(hologram.getName());
         if (last != null && now - last < Math.max(clickActions.getCooldown(), DUPLICATE_CLICK_MS)) {
-            FancyHolograms.get().getFancyLogger().debug("Hologram click on cooldown: hologram=" + hologram.getName() + ", type=" + type);
             return;
         }
         playerClicks.put(hologram.getName(), now);

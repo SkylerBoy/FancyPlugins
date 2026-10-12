@@ -468,9 +468,11 @@ public final class HologramImpl extends Hologram {
                         : getShownText(player);
             }
         }
+        // the text width is only needed to align line groups against each other and to size the click hitbox
+        final boolean needsWidth = current.segments().size() > 1 || !current.hitboxes().isEmpty();
         final float[] widths = new float[texts.length];
         float maxWidth = 0;
-        for (int i = 0; i < texts.length; i++) {
+        for (int i = 0; i < texts.length && needsWidth; i++) {
             if (texts[i] != null) {
                 widths[i] = TextWidth.of(texts[i]) * PIXEL_SIZE * current.displays().get(i).getScale().x;
                 maxWidth = Math.max(maxWidth, widths[i]);
