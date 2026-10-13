@@ -2,6 +2,7 @@ package de.oliver.fancyholograms.api.data.property;
 
 import de.oliver.fancyholograms.api.data.TextHologramData;
 import org.bukkit.Color;
+import org.bukkit.Material;
 import org.bukkit.entity.TextDisplay;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -29,6 +30,7 @@ import java.util.regex.Pattern;
  *     <li>{@code <align:left|center|right>} / {@code <text_alignment:...>}</li>
  *     <li>{@code <offset:x,y,z>} / {@code <translation:x,y,z>} - added to the hologram translation</li>
  *     <li>{@code <action:id>} - click action set of the line (see {@link ClickActions})</li>
+ *     <li>{@code <item:material>} - shows an item instead of the text (the rest of the line is ignored)</li>
  * </ul>
  * Only tags at the start of the line are parsed; unknown or invalid tags stop the parsing and are left in the text.
  * Settings that are not declared are inherited from the hologram.
@@ -41,6 +43,7 @@ import java.util.regex.Pattern;
  * @param alignment   text alignment, or null to inherit
  * @param offset      translation offset, or null for none
  * @param action      id of the click action set, or null for none
+ * @param item        item shown instead of the text, or null for a text line
  */
 public record LineSettings(
         @NotNull String text,
@@ -50,7 +53,8 @@ public record LineSettings(
         @Nullable Boolean seeThrough,
         @Nullable TextDisplay.TextAlignment alignment,
         @Nullable Vector3f offset,
-        @Nullable String action
+        @Nullable String action,
+        @Nullable Material item
 ) {
 
     /**
@@ -74,6 +78,7 @@ public record LineSettings(
         TextDisplay.TextAlignment alignment = null;
         Vector3f offset = null;
         String action = null;
+        Material item = null;
 
         String rest = raw;
         while (true) {
@@ -94,9 +99,10 @@ public record LineSettings(
                     case "align", "alignment", "text_alignment" -> alignment = TextDisplay.TextAlignment.valueOf(value.toUpperCase(Locale.ROOT));
                     case "offset", "translation" -> offset = parseVector(value, false);
                     case "action" -> action = parseActionId(value);
+                    case "item" -> item = parseItem(value);
                     default -> {
                         // not one of our tags (probably a MiniMessage tag) -> stop parsing
-                        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset, action);
+                        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset, action, item);
                     }
                 }
             } catch (IllegalArgumentException e) {
@@ -107,7 +113,7 @@ public record LineSettings(
             rest = rest.substring(matcher.end());
         }
 
-        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset, action);
+        return new LineSettings(rest, scale, background, textShadow, seeThrough, alignment, offset, action, item);
     }
 
     /**
@@ -133,6 +139,14 @@ public record LineSettings(
                 Float.parseFloat(parts[1].trim()),
                 Float.parseFloat(parts[2].trim())
         );
+    }
+
+    private static Material parseItem(String value) {
+        Material material = Material.matchMaterial(value);
+        if (material == null || !material.isItem() || material.isAir()) {
+            throw new IllegalArgumentException("Invalid item: " + value);
+        }
+        return material;
     }
 
     private static String parseActionId(String value) {
@@ -167,7 +181,7 @@ public record LineSettings(
      * @return whether this line declares any setting
      */
     public boolean hasSettings() {
-        return scale != null || background != null || textShadow != null || seeThrough != null || alignment != null || offset != null || action != null;
+        return scale != null || background != null || textShadow != null || seeThrough != null || alignment != null || offset != null || action != null || item != null;
     }
 
     /**
@@ -180,6 +194,7 @@ public record LineSettings(
                 && Objects.equals(seeThrough, other.seeThrough)
                 && alignment == other.alignment
                 && Objects.equals(offset, other.offset)
-                && Objects.equals(action, other.action);
+                && Objects.equals(action, other.action)
+                && item == other.item;
     }
 }

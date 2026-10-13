@@ -47,6 +47,20 @@ Add `<action:id>` at the start of a line (like the other per-line tags) to use t
 For each click type, the actions of the line override the `hologram` actions. If the line has no actions for that
 click type, the `hologram` actions are used.
 
+### Permissions
+
+An action set can require a permission. Players without it run the `deny` actions instead:
+
+```yaml
+    vip_shop:
+      permission: shop.vip
+      deny:
+        - 'message: <red>This shop is only for VIP players'
+        - 'sound: block.note_block.bass 1 0.5'
+      any:
+        - 'player: shop vip'
+```
+
 ### Actions
 
 | Action | Description |
@@ -56,8 +70,14 @@ click type, the `hologram` actions are used.
 | `suggest: <command>` / `suggest: <command> \| <text>` | Sends a chat message; clicking it puts the command in the chat input |
 | `message: <text>` | Sends a message (MiniMessage and placeholders) |
 | `sound: <sound> [volume] [pitch]` | Plays a sound to the player |
+| `title: <title> [\| <subtitle>] [\| <fade in> <stay> <fade out>]` | Shows a title (times in ticks) |
+| `actionbar: <text>` | Sends an action bar message |
+| `teleport: [world] <x> <y> <z> [yaw pitch]` | Teleports the player (current world if no world is given) |
+| `server: <server>` | Sends the player to another server of the proxy (BungeeCord/Velocity) |
+| `delay: <ticks>` | Waits before running the next actions |
 
-`<player>`, `<uuid>` and `<world>` are replaced in every action.
+`<player>`, `<uuid>`, `<world>` and [PlaceholderAPI](https://github.com/PlaceholderAPI/PlaceholderAPI) placeholders
+are replaced in every action, when the action runs (after a `delay`, the values are up to date).
 
 Minecraft doesn't allow servers to write in the chat input directly, so `suggest` sends a clickable message.
 

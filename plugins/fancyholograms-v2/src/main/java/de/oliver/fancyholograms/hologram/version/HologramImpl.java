@@ -14,6 +14,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
+import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
@@ -46,6 +47,11 @@ public final class HologramImpl extends Hologram {
     private static final float BACKGROUND_PADDING = 0.025f;
 
     /**
+     * Size (in blocks) of an item line ({@code <item:...>}) at scale 1, so it's about two text lines high.
+     */
+    private static final float ITEM_LINE_SIZE = 0.5f;
+
+    /**
      * The display entities and (for text holograms) the line segments they render.
      * Text holograms whose lines use per-line settings are split into one display per group of consecutive
      * lines with the same settings. Replaced atomically, so it can be read from any thread.
@@ -76,9 +82,9 @@ public final class HologramImpl extends Hologram {
 
         if (data instanceof TextHologramData textData) {
             final var segments = computeSegments(textData);
-            this.state = new State(createDisplays(segments.size()), segments, new Vector3f[segments.size()], createHitboxes());
+            this.state = new State(createDisplays(segments), segments, new Vector3f[segments.size()], createHitboxes());
         } else {
-            this.state = new State(createDisplays(1), List.of(), new Vector3f[0], createHitboxes());
+            this.state = new State(createDisplays(List.of()), List.of(), new Vector3f[0], createHitboxes());
         }
 
         update();
@@ -105,14 +111,13 @@ public final class HologramImpl extends Hologram {
 
         final State previous = current;
         final List<Segment> newSegments = data instanceof TextHologramData textData ? computeSegments(textData) : List.of();
-        final int count = data instanceof TextHologramData ? newSegments.size() : 1;
 
-        // the amount of entities changed -> they have to be respawned for the viewers
-        final boolean rebuildDisplays = count != current.displays().size();
+        // the amount or type (text/item) of entities changed -> they have to be respawned for the viewers
+        final boolean rebuildDisplays = !displaysMatch(current.displays(), newSegments);
         final boolean rebuildHitboxes = hasClickActions() == current.hitboxes().isEmpty();
 
         current = new State(
-                rebuildDisplays ? createDisplays(count) : current.displays(),
+                rebuildDisplays ? createDisplays(newSegments) : current.displays(),
                 newSegments,
                 new Vector3f[newSegments.size()],
                 rebuildHitboxes ? createHitboxes() : current.hitboxes()
@@ -127,7 +132,7 @@ public final class HologramImpl extends Hologram {
             float height = 0;
             for (int i = segments.size() - 1; i >= 0; i--) {
                 yOffsets[i] = height;
-                height += segments.get(i).lineCount() * LINE_HEIGHT * segmentScale(displayData, segments.get(i)).y;
+                height += segmentHeight(segments.get(i), displayScale(displayData, segments.get(i)).y);
             }
         }
 
@@ -222,8 +227,8 @@ public final class HologramImpl extends Hologram {
             }
 
             final Segment segment = current.segments().get(i);
-            final double bottom = base.y - BACKGROUND_PADDING;
-            final double top = base.y + segment.lineCount() * LINE_HEIGHT * current.displays().get(i).getScale().y + BACKGROUND_PADDING;
+            final double bottom = segmentBottom(current, i) - BACKGROUND_PADDING;
+            final double top = bottom + segmentHeight(segment, current.displays().get(i).getScale().y) + 2 * BACKGROUND_PADDING;
             if (height >= bottom && height <= top) {
                 return new ClickedLine(segment.firstLine(), segment.settings().action());
             }
@@ -272,6 +277,9 @@ public final class HologramImpl extends Hologram {
             final TextDisplay.TextAlignment alignment = settings.alignment() != null ? settings.alignment() : textData.getTextAlignment();
             textDisplay.setAlignLeft(alignment == TextDisplay.TextAlignment.LEFT);
             textDisplay.setAlignRight(alignment == TextDisplay.TextAlignment.RIGHT);
+        } else if (fsDisplay instanceof FS_ItemDisplay itemDisplay && segment != null && segment.isItem()) {
+            // item line of a text hologram
+            itemDisplay.setItem(new ItemStack(segment.settings().item()));
         } else if (fsDisplay instanceof FS_ItemDisplay itemDisplay && data instanceof ItemHologramData itemData) {
             // item
             itemDisplay.setItem(itemData.getItemStack());
@@ -293,12 +301,17 @@ public final class HologramImpl extends Hologram {
 
             // entity transformation
             // the translation is applied after the billboard rotation, so stacked segments stay aligned
+            final Vector3f scale = segment != null ? displayScale(displayData, segment) : displayData.getScale();
             final Vector3f translation = new Vector3f(displayData.getTranslation()).add(0, yOffset, 0);
             if (segment != null && segment.settings().offset() != null) {
                 translation.add(segment.settings().offset());
             }
+            if (segment != null && segment.isItem()) {
+                // item displays are rendered around their position, text displays above it
+                translation.add(0, scale.y / 2f, 0);
+            }
             fsDisplay.setTranslation(translation);
-            fsDisplay.setScale(segment != null ? segmentScale(displayData, segment) : displayData.getScale());
+            fsDisplay.setScale(scale);
             fsDisplay.setLeftRotation(new Quaternionf());
             fsDisplay.setRightRotation(new Quaternionf());
 
@@ -310,12 +323,36 @@ public final class HologramImpl extends Hologram {
         }
     }
 
-    private static Vector3f segmentScale(DisplayHologramData displayData, Segment segment) {
+    /**
+     * @return the scale of the display of a segment (hologram scale * line scale, and the item size for item lines)
+     */
+    private static Vector3f displayScale(DisplayHologramData displayData, Segment segment) {
         final Vector3f scale = new Vector3f(displayData.getScale());
         if (segment.settings().scale() != null) {
             scale.mul(segment.settings().scale());
         }
+        if (segment.isItem()) {
+            scale.mul(ITEM_LINE_SIZE);
+        }
         return scale;
+    }
+
+    /**
+     * @param displayScaleY the y scale of the display of the segment
+     * @return the height of a segment in blocks (an item display at scale 1 is 1 block high)
+     */
+    private static float segmentHeight(Segment segment, float displayScaleY) {
+        return segment.isItem() ? displayScaleY : segment.lineCount() * LINE_HEIGHT * displayScaleY;
+    }
+
+    /**
+     * @return the bottom of a segment (in the plane of the hologram, relative to its position)
+     */
+    private static float segmentBottom(State current, int index) {
+        final Vector3f base = current.baseTranslations()[index];
+        final Segment segment = current.segments().get(index);
+        final float y = base != null ? base.y : 0;
+        return segment.isItem() ? y - current.displays().get(index).getScale().y / 2f : y;
     }
 
     /**
@@ -336,7 +373,8 @@ public final class HologramImpl extends Hologram {
         List<String> groupLines = new ArrayList<>();
         for (int i = 0; i < lines.size(); i++) {
             final LineSettings line = lines.get(i);
-            if (groupSettings != null && !groupSettings.sameSettings(line)) {
+            // item lines are always rendered by their own display
+            if (groupSettings != null && (!groupSettings.sameSettings(line) || line.item() != null)) {
                 segments.add(new Segment(groupSettings, String.join("\n", groupLines), groupLines.size(), groupStart));
                 groupLines = new ArrayList<>();
             }
@@ -351,11 +389,15 @@ public final class HologramImpl extends Hologram {
         return segments;
     }
 
-    private List<FS_Display> createDisplays(int amount) {
+    /**
+     * @param segments the segments of a text hologram (one display per segment), empty for item/block holograms
+     */
+    private List<FS_Display> createDisplays(List<Segment> segments) {
+        final int amount = data instanceof TextHologramData ? segments.size() : 1;
         final List<FS_Display> displays = new ArrayList<>(amount);
         for (int i = 0; i < amount; i++) {
             final FS_Display fsDisplay = switch (data.getType()) {
-                case TEXT -> new FS_TextDisplay();
+                case TEXT -> segments.get(i).isItem() ? new FS_ItemDisplay() : new FS_TextDisplay();
                 case ITEM -> new FS_ItemDisplay();
                 case BLOCK -> new FS_BlockDisplay();
             };
@@ -368,6 +410,24 @@ public final class HologramImpl extends Hologram {
             displays.add(fsDisplay);
         }
         return List.copyOf(displays);
+    }
+
+    /**
+     * @return whether the existing displays can render the segments (same amount and type)
+     */
+    private boolean displaysMatch(List<FS_Display> displays, List<Segment> segments) {
+        if (!(data instanceof TextHologramData)) {
+            return displays.size() == 1;
+        }
+        if (displays.size() != segments.size()) {
+            return false;
+        }
+        for (int i = 0; i < segments.size(); i++) {
+            if ((displays.get(i) instanceof FS_ItemDisplay) != segments.get(i).isItem()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void respawnForViewers(State oldState, State newState) {
@@ -467,8 +527,10 @@ public final class HologramImpl extends Hologram {
         for (int i = 0; i < texts.length && needsWidth; i++) {
             if (texts[i] != null) {
                 widths[i] = TextWidth.of(texts[i]) * PIXEL_SIZE * current.displays().get(i).getScale().x;
-                maxWidth = Math.max(maxWidth, widths[i]);
+            } else if (i < current.segments().size() && current.segments().get(i).isItem()) {
+                widths[i] = current.displays().get(i).getScale().x;
             }
+            maxWidth = Math.max(maxWidth, widths[i]);
         }
         alignSegments(current, widths, maxWidth);
 
@@ -526,9 +588,9 @@ public final class HologramImpl extends Hologram {
             float bottom = Float.MAX_VALUE;
             float top = -Float.MAX_VALUE;
             for (int i = 0; i < current.segments().size(); i++) {
-                final Vector3f base = current.baseTranslations()[i] != null ? current.baseTranslations()[i] : translation;
-                bottom = Math.min(bottom, base.y);
-                top = Math.max(top, base.y + current.segments().get(i).lineCount() * LINE_HEIGHT * current.displays().get(i).getScale().y);
+                final float segmentBottom = segmentBottom(current, i);
+                bottom = Math.min(bottom, segmentBottom);
+                top = Math.max(top, segmentBottom + segmentHeight(current.segments().get(i), current.displays().get(i).getScale().y));
             }
 
             hitbox.setLocation(location.x(), location.y() + bottom - HITBOX_PADDING / 2f, location.z());
@@ -579,6 +641,10 @@ public final class HologramImpl extends Hologram {
      * A group of consecutive text lines rendered by one display entity.
      */
     private record Segment(LineSettings settings, String rawText, int lineCount, int firstLine) {
+
+        boolean isItem() {
+            return settings.item() != null;
+        }
     }
 
     /**

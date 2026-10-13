@@ -18,6 +18,7 @@ import de.oliver.fancyholograms.commands.FancyHologramsCMD;
 import de.oliver.fancyholograms.commands.FancyHologramsTestCMD;
 import de.oliver.fancyholograms.commands.HologramCMD;
 import de.oliver.fancyholograms.hologram.version.HologramImpl;
+import de.oliver.fancyholograms.hologram.click.ClickActionExecutor;
 import de.oliver.fancyholograms.listeners.*;
 import de.oliver.fancyholograms.storage.FlatFileHologramStorage;
 import de.oliver.fancyholograms.storage.converter.FHConversionRegistry;
@@ -286,6 +287,8 @@ public final class FancyHolograms extends JavaPlugin implements FancyHologramsPl
         getServer().getPluginManager().registerEvents(new WorldListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerLoadedListener(this), this);
         getServer().getPluginManager().registerEvents(new HologramClickListener(), this);
+        // used by the "server" click action
+        getServer().getMessenger().registerOutgoingPluginChannel(this, ClickActionExecutor.BUNGEE_CHANNEL);
 
         if (PluginUtils.isFancyNpcsEnabled()) {
             getServer().getPluginManager().registerEvents(new NpcListener(this), this);

@@ -80,7 +80,7 @@ public final class HologramClickListener implements Listener {
         final int lineIndex = line != null ? line.firstLine() : -1;
         final String lineActionId = line != null ? line.actionId() : null;
 
-        final List<String> actions = clickActions.resolve(lineActionId, type);
+        final List<String> actions = clickActions.resolve(lineActionId, type, player::hasPermission);
         FancyHolograms.get().getFancyLogger().debug("Hologram click: hologram=" + hologram.getName() + ", type=" + type
                 + ", line=" + lineIndex + ", action=" + lineActionId + ", actions=" + actions);
         final HologramClickEvent clickEvent = new HologramClickEvent(hologram, player, type, lineIndex, lineActionId, actions);

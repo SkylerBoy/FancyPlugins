@@ -5,6 +5,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * Click actions of a hologram.
@@ -46,13 +47,19 @@ public final class ClickActions {
             "- Each set can have the lists 'left', 'right', 'shift_left', 'shift_right' and 'any'",
             "  (a shift click without its own list uses 'left'/'right', and a click without its own list uses 'any')",
             "- The actions of a line override the 'hologram' actions for that click type",
+            "- 'permission' (optional) is required to run the actions of a set, otherwise its 'deny' actions run",
             "Actions:",
             "- 'player: <command>'               command executed by the player (as if typed in the chat)",
             "- 'console: <command>'              command executed by the console",
             "- 'suggest: <command> | <text>'     clickable chat message that writes the command in the chat input",
             "- 'message: <text>'                 message (MiniMessage and PlaceholderAPI)",
             "- 'sound: <sound> [volume] [pitch]' sound played to the player",
-            "Placeholders in every action: <player>, <uuid>, <world>"
+            "- 'title: <title> [| <subtitle>] [| <fade in> <stay> <fade out>]'  title (times in ticks)",
+            "- 'actionbar: <text>'               action bar message",
+            "- 'teleport: [world] <x> <y> <z> [yaw pitch]' teleports the player",
+            "- 'server: <server>'                sends the player to another server (BungeeCord/Velocity)",
+            "- 'delay: <ticks>'                  waits before running the next actions",
+            "Placeholders in every action: <player>, <uuid>, <world> and PlaceholderAPI"
     );
 
     private final Map<String, ActionSet> actionSets = new LinkedHashMap<>();
@@ -92,11 +99,20 @@ public final class ClickActions {
      * Actions per click type. A shift click without its own list uses the normal click list, and a click type
      * without its own list uses the "any" list.
      */
-    public record ActionSet(@NotNull List<String> any, @NotNull Map<ClickType, List<String>> byType) {
+    public record ActionSet(@NotNull List<String> any, @NotNull Map<ClickType, List<String>> byType,
+                            @Nullable String permission, @NotNull List<String> deny) {
 
         public ActionSet {
             any = List.copyOf(any);
             byType = Map.copyOf(byType);
+            deny = List.copyOf(deny);
+            if (permission != null && permission.isBlank()) {
+                permission = null;
+            }
+        }
+
+        public ActionSet(@NotNull List<String> any, @NotNull Map<ClickType, List<String>> byType) {
+            this(any, byType, null, List.of());
         }
 
         public @NotNull List<String> get(@NotNull ClickType type) {
@@ -148,13 +164,31 @@ public final class ClickActions {
      * @return the actions to run (empty if none)
      */
     public @NotNull List<String> resolve(@Nullable String lineActionId, @NotNull ClickType type) {
-        ActionSet line = getActionSet(lineActionId);
-        if (line != null && !line.get(type).isEmpty()) {
-            return line.get(type);
+        return resolve(lineActionId, type, permission -> true);
+    }
+
+    /**
+     * Resolves the actions to run for a click on a line, checking the permission of the used action set.
+     * If the player doesn't have the permission, the {@code deny} actions of the set are returned instead.
+     *
+     * @param lineActionId  the {@code <action:id>} of the clicked line, or null
+     * @param type          the click type
+     * @param hasPermission checks whether the player has a permission
+     * @return the actions to run (empty if none)
+     */
+    public @NotNull List<String> resolve(@Nullable String lineActionId, @NotNull ClickType type, @NotNull Predicate<String> hasPermission) {
+        ActionSet set = getActionSet(lineActionId);
+        if (set == null || set.get(type).isEmpty()) {
+            set = getActionSet(HOLOGRAM_ACTION_ID);
+        }
+        if (set == null) {
+            return List.of();
         }
 
-        ActionSet hologram = getActionSet(HOLOGRAM_ACTION_ID);
-        return hologram != null ? hologram.get(type) : List.of();
+        if (set.permission() != null && !hasPermission.test(set.permission())) {
+            return set.deny();
+        }
+        return set.get(type);
     }
 
     public void read(@Nullable ConfigurationSection section) {
@@ -184,7 +218,7 @@ public final class ClickActions {
                     byType.put(type, list);
                 }
             }
-            setActionSet(id, new ActionSet(set.getStringList("any"), byType));
+            setActionSet(id, new ActionSet(set.getStringList("any"), byType, set.getString("permission"), set.getStringList("deny")));
         }
     }
 
@@ -203,6 +237,12 @@ public final class ClickActions {
         for (Map.Entry<String, ActionSet> entry : actionSets.entrySet()) {
             ConfigurationSection set = actions.createSection(entry.getKey());
             ActionSet actionSet = entry.getValue();
+            if (actionSet.permission() != null) {
+                set.set("permission", actionSet.permission());
+            }
+            if (!actionSet.deny().isEmpty()) {
+                set.set("deny", actionSet.deny());
+            }
             if (!actionSet.any().isEmpty()) {
                 set.set("any", actionSet.any());
             }

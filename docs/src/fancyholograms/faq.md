@@ -27,6 +27,7 @@ Text holograms support per-line settings using tags at the start of a line:
 | `<align:left/center/right>` | Aligns the line against the widest line of the hologram |
 | `<offset:x,y,z>` | Extra translation for the line |
 | `<action:id>` | Click actions of the line (see [clickable holograms](tutorials/clickable-holograms.md)) |
+| `<item:material>` | Shows an item instead of the text, e.g. `<item:diamond_sword>` (the rest of the line is ignored) |
 
 Only tags at the very beginning of the line are parsed. Settings that are not set are inherited from the hologram.
 Consecutive lines with the same settings are rendered by the same display entity.
